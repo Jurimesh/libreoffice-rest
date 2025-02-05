@@ -1,0 +1,22 @@
+{
+  "name": "libreoffice-rest",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@fastify/multipart": "^9.0.3",
+    "fastify": "^5.2.1",
+    "fastify-plugin": "^5.0.1",
+    "pino": "^9.6.0",
+    "prom-client": "^15.1.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.1"
+  }
+}
