@@ -1,14 +1,18 @@
-import fastifyMultipart from '@fastify/multipart';
-import fastify from 'fastify';
+import fastifyMultipart from "@fastify/multipart";
+import fastify from "fastify";
 
-import { PORT } from './constants';
-import { getCloseHandler } from './clean-exit';
-import { getLogger } from './logger';
-import fastifyPrometheus from './prometheus/plugin';
+import { PORT } from "./constants";
+import { getCloseHandler } from "./clean-exit";
+import { getLogger } from "./logger";
+import fastifyPrometheus from "./prometheus/plugin";
 
 const logger = getLogger();
 
 export async function start() {
+  if (isNaN(PORT)) {
+    throw new Error("PORT must be a number");
+  }
+
   const app = fastify({
     trustProxy: true,
     // logger: getLogger(),
@@ -16,10 +20,10 @@ export async function start() {
     bodyLimit: 100 * 1024 * 1024,
     maxParamLength: 2048,
     rewriteUrl: (req) => {
-      if (req.url?.startsWith('/api')) {
+      if (req.url?.startsWith("/api")) {
         return req.url.substring(4);
       } else {
-        return req.url ?? '/';
+        return req.url ?? "/";
       }
     },
   });
@@ -29,27 +33,27 @@ export async function start() {
   app.register(fastifyPrometheus);
 
   app.get(
-    '/ready',
+    "/ready",
     {
       config: {
         disableMetrics: true,
       },
     },
     (req, reply) => {
-      reply.status(200).send('ready');
-    },
+      reply.status(200).send("ready");
+    }
   );
 
   app.get(
-    '/health',
+    "/health",
     {
       config: {
         disableMetrics: true,
       },
     },
     (req, reply) => {
-      reply.status(200).send('healthy');
-    },
+      reply.status(200).send("healthy");
+    }
   );
 
   app.register(fastifyMultipart, {
@@ -65,7 +69,7 @@ export async function start() {
 
   await app.listen({
     port: PORT,
-    host: '0.0.0.0',
+    host: "0.0.0.0",
   });
 
   logger.info(`Server listening on port: ${PORT}`);

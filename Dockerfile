@@ -22,16 +22,21 @@ RUN pnpm run build:server
 # ===== PRODUCTION IMAGE =====
 FROM node:22.13.1-alpine
 
-# Define build arguments
-ARG GIT_SHA
-ARG RELEASE_TAG
-
-# Set environment variables using the build arguments
-ENV GIT_SHA=$GITHUB_SHA
-ENV RELEASE_TAG=$RELEASE_TAG
-
 RUN apk update
-RUN apk add --no-cache make gcc g++ python3 libressl-dev dumb-init libreoffice-writer
+RUN apk add --no-cache \
+    make \
+    gcc \
+    g++ \
+    python3 \
+    py3-pip \
+    libressl-dev \
+    dumb-init \
+    libreoffice-writer \
+    python3-dev \
+    musl-dev
+
+# Install unoserver
+RUN pip3 install unoserver
 
 ENV NODE_ENV production
 ENV PORT 8080
