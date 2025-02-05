@@ -71,7 +71,7 @@ class LibreOfficeService {
     // Use unoconvert instead of soffice
     await spawnPromise(
       "unoconvert",
-      ["--port", "2002", "--format", "docx", filename, outputPath],
+      ["--port", "2002", "--convert-to", "docx", filename, outputPath],
       {
         cwd,
         timeout: 120_000,

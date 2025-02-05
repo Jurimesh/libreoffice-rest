@@ -27,20 +27,26 @@ RUN apk add --no-cache \
     make \
     gcc \
     g++ \
-    python3 \
-    py3-pip \
     libressl-dev \
     dumb-init \
+    libreoffice \
     libreoffice-writer \
+    python3 \
     python3-dev \
-    musl-dev
+    musl-dev \
+    py3-pip \
+    py3-setuptools \
+    py3-wheel
 
-# Install unoserver
+# Create and use a virtual environment for Python packages
+RUN python3 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Now install unoserver in the virtual environment
 RUN pip3 install unoserver
 
 ENV NODE_ENV production
 ENV PORT 8080
-ENV INTERNAL_PORT 8081
 
 # Node user is 1000:1000
 USER 1000
@@ -51,6 +57,5 @@ COPY --from=build --chown=1000:1000 /usr/src/app /usr/src/app
 
 # Expose a port
 EXPOSE 8080
-EXPOSE 8081
 
 CMD ["dumb-init", "node", "--max-old-space-size=1024", "--enable-source-maps", "./dist/bundle.prod.js"]

@@ -11,5 +11,5 @@ docker build -t libreoffice-rest:latest .
 ## Run
 
 ```
-docker run -d -p 8080:8080 -p 8081:8081 libreoffice-rest:latest
+docker run -p 8080:8080 -e TARGET_DIR=/tmp libreoffice-rest:latest
 ```

@@ -20,17 +20,9 @@ export async function start() {
 
   const app = fastify({
     trustProxy: true,
-    // logger: getLogger(),
-    logger: true,
+    logger: getLogger(),
     bodyLimit: 100 * 1024 * 1024,
     maxParamLength: 2048,
-    rewriteUrl: (req) => {
-      if (req.url?.startsWith("/api")) {
-        return req.url.substring(4);
-      } else {
-        return req.url ?? "/";
-      }
-    },
   });
 
   getCloseHandler().add(() => app.close());
