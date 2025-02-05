@@ -48,4 +48,4 @@ COPY --from=build --chown=1000:1000 /usr/src/app /usr/src/app
 EXPOSE 8080
 EXPOSE 8081
 
-CMD ["dumb-init", "node", "--max-old-space-size=1024", "--enable-source-maps", "./server-dist/bundle.prod.js"]
+CMD ["dumb-init", "node", "--max-old-space-size=1024", "--enable-source-maps", "./dist/bundle.prod.js"]
