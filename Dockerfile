@@ -27,19 +27,27 @@ RUN apk add --no-cache \
     make \
     gcc \
     g++ \
+    python3 \
+    py3-pip \
     libressl-dev \
     dumb-init \
+    # Remove individual libreoffice packages and install the full one
     libreoffice \
-    libreoffice-writer \
-    python3 \
     python3-dev \
     musl-dev \
-    py3-pip \
     py3-setuptools \
-    py3-wheel
+    py3-wheel \
+    ttf-dejavu \
+    font-noto \
+    wget
+
+# Add UNO check script
+RUN wget -O find_uno.py https://gist.githubusercontent.com/regebro/036da022dc7d5241a0ee97efdf1458eb/raw/find_uno.py && \
+    python3 find_uno.py && \
+    rm find_uno.py
 
 # Create and use a virtual environment for Python packages
-RUN python3 -m venv /opt/venv
+RUN python3 -m venv --system-site-packages /opt/venv
 ENV PATH="/opt/venv/bin:$PATH"
 
 # Now install unoserver in the virtual environment

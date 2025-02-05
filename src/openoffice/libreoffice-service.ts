@@ -4,6 +4,8 @@ import { ChildProcess, spawn } from "node:child_process";
 
 import { spawnPromise } from "../utils/spawn";
 
+const UNOSERVER_PORT = "2003";
+
 class LibreOfficeService {
   private static instance: LibreOfficeService;
   private serverProcess: ChildProcess | null = null;
@@ -28,7 +30,7 @@ class LibreOfficeService {
     this.startPromise = new Promise<void>((resolve, reject) => {
       try {
         // Start unoserver instead of soffice directly
-        this.serverProcess = spawn("unoserver", ["--port", "2002"]);
+        this.serverProcess = spawn("unoserver", ["--port", UNOSERVER_PORT]);
 
         this.serverProcess.on("error", (error) => {
           console.error("unoserver process error:", error);
@@ -54,7 +56,7 @@ class LibreOfficeService {
     return this.startPromise;
   }
 
-  private async ensureServiceRunning(): Promise<void> {
+  public async ensureServiceRunning(): Promise<void> {
     if (!this.serverProcess && !this.isStarting) {
       await this.startService();
     } else if (this.isStarting) {
@@ -71,7 +73,7 @@ class LibreOfficeService {
     // Use unoconvert instead of soffice
     await spawnPromise(
       "unoconvert",
-      ["--port", "2002", "--convert-to", "docx", filename, outputPath],
+      ["--port", UNOSERVER_PORT, "--convert-to", "docx", filename, outputPath],
       {
         cwd,
         timeout: 120_000,

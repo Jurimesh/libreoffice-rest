@@ -9,7 +9,10 @@ import { PORT, TARGET_DIR } from "./constants";
 import { getCloseHandler } from "./clean-exit";
 import { getLogger } from "./logger";
 import fastifyPrometheus from "./prometheus/plugin";
-import { docToDocx } from "./openoffice/libreoffice-service";
+import {
+  docToDocx,
+  libreOfficeService,
+} from "./openoffice/libreoffice-service";
 
 const logger = getLogger();
 
@@ -125,4 +128,8 @@ export async function start() {
   });
 
   logger.info(`Server listening on port: ${PORT}`);
+
+  logger.info("Starting libreoffice service");
+  await libreOfficeService.ensureServiceRunning();
+  logger.info("Libreoffice service started");
 }
