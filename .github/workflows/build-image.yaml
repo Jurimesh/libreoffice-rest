@@ -40,6 +40,6 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          tags:
-            - jasperdm/libreoffice-rest:latest
-            - jasperdm/libreoffice-rest:${{ env.RELEASE_TAG }}
+          tags: |
+            jasperdm/libreoffice-rest:latest
+            jasperdm/libreoffice-rest:${{ env.RELEASE_TAG }}
