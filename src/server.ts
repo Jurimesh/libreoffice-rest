@@ -20,7 +20,8 @@ export async function start() {
 
   const app = fastify({
     trustProxy: true,
-    logger: getLogger(),
+    // logger: getLogger(),
+    logger: true,
     bodyLimit: 100 * 1024 * 1024,
     maxParamLength: 2048,
   });
