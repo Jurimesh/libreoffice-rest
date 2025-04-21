@@ -84,6 +84,26 @@ class LibreOfficeService {
     return outputPath;
   }
 
+  public async docxToPdf(filename: string): Promise<string> {
+    await this.ensureServiceRunning();
+  
+    const cwd = pathUtils.dirname(filename);
+    const basename = pathUtils.basename(filename, '.docx');
+    const outputPath = pathUtils.join(cwd, `${basename}.pdf`);
+  
+    await spawnPromise(
+      "unoconvert",
+      ["--port", UNOSERVER_PORT, "--convert-to", "pdf", filename, outputPath],
+      {
+        cwd,
+        timeout: 120_000,
+        env: process.env,
+      }
+    );
+  
+    return outputPath;
+  }
+
   public async shutdown(): Promise<void> {
     if (this.serverProcess) {
       this.serverProcess.kill();
@@ -98,4 +118,8 @@ export const libreOfficeService = LibreOfficeService.getInstance();
 // Export the conversion function as before
 export async function docToDocx(filename: string): Promise<string> {
   return libreOfficeService.docToDocx(filename);
+}
+
+export async function docxToPdf(filename: string): Promise<string> {
+  return libreOfficeService.docxToPdf(filename);
 }

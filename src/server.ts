@@ -11,6 +11,7 @@ import { getLogger } from "./logger";
 import fastifyPrometheus from "./prometheus/plugin";
 import {
   docToDocx,
+  docxToPdf,
   libreOfficeService,
 } from "./openoffice/libreoffice-service";
 
@@ -111,6 +112,57 @@ export async function start() {
       reply.status(500).send({ error: err.message });
     }
 
+    for (const filepath of filesToRemove) {
+      fsPromises
+        .rm(filepath, {
+          force: true,
+        })
+        .catch((err) => {
+          logger.error(err);
+        });
+    }
+  });
+
+  app.post("/docx-to-pdf", {}, async (req, reply) => {
+    if (!req.isMultipart) {
+      return reply.status(400).send({
+        error: "Not a multipart request",
+      });
+    }
+  
+    const data = await req.file();
+    if (!data) {
+      return reply.status(400).send({
+        error: "File parameter required",
+      });
+    }
+  
+    const targetFilepath = pathUtils.join(TARGET_DIR, `${Date.now()}.docx`);
+    await pipeline(data.file, fs.createWriteStream(targetFilepath));
+  
+    let filesToRemove = [targetFilepath];
+    try {
+      const mimetype = data.mimetype;
+      if (mimetype !== "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+        return reply.status(400).send({
+          error: "File must be of type application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        });
+      }
+  
+      const convertedFilepath = await docxToPdf(targetFilepath);
+      filesToRemove.push(convertedFilepath);
+  
+      reply
+        .status(200)
+        .header("Content-Type", "application/pdf");
+  
+      // Pipe converted content of convertedFilepath to reply
+      await reply.send(fs.createReadStream(convertedFilepath));
+    } catch (err: any) {
+      logger.error(err);
+      reply.status(500).send({ error: err.message });
+    }
+  
     for (const filepath of filesToRemove) {
       fsPromises
         .rm(filepath, {
