@@ -1,6 +1,6 @@
 # Simple OpenOffice conversion Docker Image
 
-Simple docker image to have a REST api to convert docs from doc to docx using openoffice.
+Simple docker image to have a REST api to convert various Office document formats using LibreOffice.
 
 ## Build
 
@@ -21,7 +21,17 @@ POST /doc-to-docx
 Content-Type: multipart/form-data
 file=@document.doc
 
-### Convert DOCX to PDF
-POST /docx-to-pdf
+### Convert to PDF (from DOCX or PPTX)
+POST /to-pdf
 Content-Type: multipart/form-data
-file=@document.docx
+file=@document.docx or file=@presentation.pptx
+
+### Convert PPT to PPTX
+POST /ppt-to-pptx
+Content-Type: multipart/form-data
+file=@presentation.ppt
+
+### Convert XLS to XLSX
+POST /xls-to-xlsx
+Content-Type: multipart/form-data
+file=@spreadsheet.xls

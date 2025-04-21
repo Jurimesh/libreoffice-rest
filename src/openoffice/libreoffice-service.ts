@@ -104,6 +104,64 @@ class LibreOfficeService {
     return outputPath;
   }
 
+  public async pptxToPdf(filename: string): Promise<string> {
+    await this.ensureServiceRunning();
+  
+    const cwd = pathUtils.dirname(filename);
+    const basename = pathUtils.basename(filename, '.pptx');
+    const outputPath = pathUtils.join(cwd, `${basename}.pdf`);
+  
+    await spawnPromise(
+      "unoconvert",
+      ["--port", UNOSERVER_PORT, "--convert-to", "pdf", filename, outputPath],
+      {
+        cwd,
+        timeout: 120_000,
+        env: process.env,
+      }
+    );
+  
+    return outputPath;
+  }
+
+  public async pptToPptx(filename: string): Promise<string> {
+    await this.ensureServiceRunning();
+
+    const cwd = pathUtils.dirname(filename);
+    const outputPath = filename + "x";
+
+    await spawnPromise(
+      "unoconvert",
+      ["--port", UNOSERVER_PORT, "--convert-to", "pptx", filename, outputPath],
+      {
+        cwd,
+        timeout: 120_000,
+        env: process.env,
+      }
+    );
+
+    return outputPath;
+  }
+
+  public async xlsToXlsx(filename: string): Promise<string> {
+    await this.ensureServiceRunning();
+
+    const cwd = pathUtils.dirname(filename);
+    const outputPath = filename + "x";
+
+    await spawnPromise(
+      "unoconvert",
+      ["--port", UNOSERVER_PORT, "--convert-to", "xlsx", filename, outputPath],
+      {
+        cwd,
+        timeout: 120_000,
+        env: process.env,
+      }
+    );
+
+    return outputPath;
+  }
+
   public async shutdown(): Promise<void> {
     if (this.serverProcess) {
       this.serverProcess.kill();
@@ -115,11 +173,23 @@ class LibreOfficeService {
 // Export a singleton instance
 export const libreOfficeService = LibreOfficeService.getInstance();
 
-// Export the conversion function as before
+// Export the conversion functions
 export async function docToDocx(filename: string): Promise<string> {
   return libreOfficeService.docToDocx(filename);
 }
 
 export async function docxToPdf(filename: string): Promise<string> {
   return libreOfficeService.docxToPdf(filename);
+}
+
+export async function pptxToPdf(filename: string): Promise<string> {
+  return libreOfficeService.pptxToPdf(filename);
+}
+
+export async function pptToPptx(filename: string): Promise<string> {
+  return libreOfficeService.pptToPptx(filename);
+}
+
+export async function xlsToXlsx(filename: string): Promise<string> {
+  return libreOfficeService.xlsToXlsx(filename);
 }
