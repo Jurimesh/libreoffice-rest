@@ -11,6 +11,10 @@ import { getLogger } from "./logger";
 import fastifyPrometheus from "./prometheus/plugin";
 import {
   docToDocx,
+  docxToPdf,
+  pptxToPdf,
+  pptToPptx,
+  xlsToXlsx,
   libreOfficeService,
 } from "./openoffice/libreoffice-service";
 
@@ -111,6 +115,168 @@ export async function start() {
       reply.status(500).send({ error: err.message });
     }
 
+    for (const filepath of filesToRemove) {
+      fsPromises
+        .rm(filepath, {
+          force: true,
+        })
+        .catch((err) => {
+          logger.error(err);
+        });
+    }
+  });
+
+  app.post("/to-pdf", {}, async (req, reply) => {
+    if (!req.isMultipart) {
+      return reply.status(400).send({
+        error: "Not a multipart request",
+      });
+    }
+  
+    const data = await req.file();
+    if (!data) {
+      return reply.status(400).send({
+        error: "File parameter required",
+      });
+    }
+  
+    let fileExt = "";
+    let convertFn;
+    const mimetype = data.mimetype;
+    
+    if (mimetype === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+      fileExt = ".docx";
+      convertFn = docxToPdf;
+    } else if (mimetype === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
+      fileExt = ".pptx";
+      convertFn = pptxToPdf;
+    } else {
+      return reply.status(400).send({
+        error: "File must be of type docx or pptx",
+      });
+    }
+  
+    const targetFilepath = pathUtils.join(TARGET_DIR, `${Date.now()}${fileExt}`);
+    await pipeline(data.file, fs.createWriteStream(targetFilepath));
+  
+    let filesToRemove = [targetFilepath];
+    try {
+      const convertedFilepath = await convertFn(targetFilepath);
+      filesToRemove.push(convertedFilepath);
+  
+      reply
+        .status(200)
+        .header("Content-Type", "application/pdf");
+  
+      // Pipe converted content of convertedFilepath to reply
+      await reply.send(fs.createReadStream(convertedFilepath));
+    } catch (err: any) {
+      logger.error(err);
+      reply.status(500).send({ error: err.message });
+    }
+  
+    for (const filepath of filesToRemove) {
+      fsPromises
+        .rm(filepath, {
+          force: true,
+        })
+        .catch((err) => {
+          logger.error(err);
+        });
+    }
+  });
+
+  app.post("/ppt-to-pptx", {}, async (req, reply) => {
+    if (!req.isMultipart) {
+      return reply.status(400).send({
+        error: "Not a multipart request",
+      });
+    }
+  
+    const data = await req.file();
+    if (!data) {
+      return reply.status(400).send({
+        error: "File parameter required",
+      });
+    }
+  
+    const targetFilepath = pathUtils.join(TARGET_DIR, `${Date.now()}.ppt`);
+    await pipeline(data.file, fs.createWriteStream(targetFilepath));
+  
+    let filesToRemove = [targetFilepath];
+    try {
+      const mimetype = data.mimetype;
+      if (mimetype !== "application/vnd.ms-powerpoint") {
+        return reply.status(400).send({
+          error: "File must be of type application/vnd.ms-powerpoint",
+        });
+      }
+  
+      const convertedFilepath = await pptToPptx(targetFilepath);
+      filesToRemove.push(convertedFilepath);
+  
+      reply
+        .status(200)
+        .header("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation");
+  
+      // Pipe converted content of convertedFilepath to reply
+      await reply.send(fs.createReadStream(convertedFilepath));
+    } catch (err: any) {
+      logger.error(err);
+      reply.status(500).send({ error: err.message });
+    }
+  
+    for (const filepath of filesToRemove) {
+      fsPromises
+        .rm(filepath, {
+          force: true,
+        })
+        .catch((err) => {
+          logger.error(err);
+        });
+    }
+  });
+
+  app.post("/xls-to-xlsx", {}, async (req, reply) => {
+    if (!req.isMultipart) {
+      return reply.status(400).send({
+        error: "Not a multipart request",
+      });
+    }
+  
+    const data = await req.file();
+    if (!data) {
+      return reply.status(400).send({
+        error: "File parameter required",
+      });
+    }
+  
+    const targetFilepath = pathUtils.join(TARGET_DIR, `${Date.now()}.xls`);
+    await pipeline(data.file, fs.createWriteStream(targetFilepath));
+  
+    let filesToRemove = [targetFilepath];
+    try {
+      const mimetype = data.mimetype;
+      if (mimetype !== "application/vnd.ms-excel") {
+        return reply.status(400).send({
+          error: "File must be of type application/vnd.ms-excel",
+        });
+      }
+  
+      const convertedFilepath = await xlsToXlsx(targetFilepath);
+      filesToRemove.push(convertedFilepath);
+  
+      reply
+        .status(200)
+        .header("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  
+      // Pipe converted content of convertedFilepath to reply
+      await reply.send(fs.createReadStream(convertedFilepath));
+    } catch (err: any) {
+      logger.error(err);
+      reply.status(500).send({ error: err.message });
+    }
+  
     for (const filepath of filesToRemove) {
       fsPromises
         .rm(filepath, {
