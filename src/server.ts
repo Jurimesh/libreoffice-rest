@@ -15,6 +15,8 @@ import {
   pptxToPdf,
   pptToPptx,
   xlsToXlsx,
+  jpgToPdf,
+  pngToPdf,
   libreOfficeService,
 } from "./openoffice/libreoffice-service";
 
@@ -150,9 +152,15 @@ export async function start() {
     } else if (mimetype === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
       fileExt = ".pptx";
       convertFn = pptxToPdf;
+    } else if (mimetype === "image/jpeg") {
+      fileExt = ".jpg";
+      convertFn = jpgToPdf;
+    } else if (mimetype === "image/png") {
+      fileExt = ".png";
+      convertFn = pngToPdf;
     } else {
       return reply.status(400).send({
-        error: "File must be of type docx or pptx",
+        error: "File must be of type docx, pptx, jpg, or png",
       });
     }
   

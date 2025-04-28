@@ -21,10 +21,10 @@ POST /doc-to-docx
 Content-Type: multipart/form-data
 file=@document.doc
 
-### Convert to PDF (from DOCX or PPTX)
+### Convert to PDF (from DOCX, PPTX, JPG, or PNG)
 POST /to-pdf
 Content-Type: multipart/form-data
-file=@document.docx or file=@presentation.pptx
+file=@document.docx or file=@presentation.pptx or file=@image.jpg or file=@image.png
 
 ### Convert PPT to PPTX
 POST /ppt-to-pptx
