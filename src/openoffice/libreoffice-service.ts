@@ -134,8 +134,9 @@ class LibreOfficeService {
 
   private async performFunctionalTest(): Promise<boolean> {
     const tempDir = os.tmpdir();
-    const testFile = path.join(tempDir, `unoserver-test-${Date.now()}.txt`);
-    const outputFile = path.join(tempDir, `unoserver-test-${Date.now()}.pdf`);
+    const timestamp = Date.now();
+    const testFile = path.join(tempDir, `unoserver-test-${timestamp}.txt`);
+    const outputFile = path.join(tempDir, `unoserver-test-${timestamp}.pdf`);
 
     try {
       fs.writeFileSync(testFile, 'Unoserver health check test');
