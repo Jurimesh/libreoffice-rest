@@ -104,12 +104,12 @@ class LibreOfficeService {
   private async checkServerReady(): Promise<boolean> {
     return await this.checkServerConnectable() && await this.performFunctionalTest();
   }
-  
+
   private async checkServerConnectable(): Promise<boolean> {
     return new Promise<boolean>(resolve => {
       const socket = new net.Socket();
       let resolved = false;
-      
+
       const resolveOnce = (value: boolean) => {
         if (!resolved) {
           resolved = true;
@@ -117,13 +117,13 @@ class LibreOfficeService {
           resolve(value);
         }
       };
-      
+
       socket.setTimeout(3000);
-      
+
       socket.on('connect', () => resolveOnce(true));
       socket.on('error', () => resolveOnce(false));
       socket.on('timeout', () => resolveOnce(false));
-      
+
       try {
         socket.connect(parseInt(UNOSERVER_PORT), '127.0.0.1');
       } catch (error) {
@@ -131,81 +131,54 @@ class LibreOfficeService {
       }
     });
   }
-  
+
   private async performFunctionalTest(): Promise<boolean> {
     const tempDir = os.tmpdir();
     const testFile = path.join(tempDir, `unoserver-test-${Date.now()}.txt`);
     const outputFile = path.join(tempDir, `unoserver-test-${Date.now()}.pdf`);
-    
+
     try {
       fs.writeFileSync(testFile, 'Unoserver health check test');
-      
+
       await spawnPromise(
         "unoconvert",
         ["--port", UNOSERVER_PORT, "--convert-to", "pdf", testFile, outputFile],
         { timeout: 8000, env: process.env }
       );
-      
+
       const success = fs.existsSync(outputFile);
-      
+
       try {
         if (fs.existsSync(testFile)) fs.unlinkSync(testFile);
         if (fs.existsSync(outputFile)) fs.unlinkSync(outputFile);
       } catch (e) {
       }
-      
+
       if (!success) {
         this.logger.warn("Unoserver failed functional test - conversion failed");
       }
-      
+
       return success;
     } catch (error) {
       this.logger.warn({ error: error instanceof Error ? error.message : String(error) }, "Unoserver failed functional test");
-      
+
       try {
         if (fs.existsSync(testFile)) fs.unlinkSync(testFile);
         if (fs.existsSync(outputFile)) fs.unlinkSync(outputFile);
       } catch (e) {
       }
-      
+
       return false;
     }
   }
 
   private async restartServer(): Promise<void> {
-    try {
-      const shutdownPromise = this.shutdown();
-      const timeoutPromise = new Promise<void>((_, reject) => {
-        setTimeout(() => reject(new Error('Shutdown timeout')), 10000);
-      });
-
-      await Promise.race([shutdownPromise, timeoutPromise]);
-    } catch (error) {
-      this.logger.error({ error }, 'Normal shutdown failed, forcing kill');
-      this.forceKillServer();
-    }
+    await this.shutdown();
 
     this.startPromise = null;
     this.unreadyMinutes = 0;
 
     await this.startService();
-  }
-
-  private forceKillServer(): void {
-    if (this.serverProcess && this.serverProcess.pid) {
-      this.logger.info({ pid: this.serverProcess.pid }, "Force killing unoserver process");
-      try {
-        process.kill(this.serverProcess.pid, 'SIGKILL');
-      } catch (error) {
-        this.logger.error({ error }, 'Force kill failed');
-      }
-      this.serverProcess = null;
-    }
-
-    if (this.pollingTimer) {
-      clearInterval(this.pollingTimer);
-      this.pollingTimer = null;
-    }
   }
 
   public async ensureServiceRunning(): Promise<void> {
