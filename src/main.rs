@@ -5,13 +5,17 @@ use axum::{
 };
 use tower_http::trace::TraceLayer;
 
-mod routes;
 mod libreoffice;
+mod routes;
 
 const PORT: u16 = 1234;
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .init();
+
     let app = Router::new()
         .layer(DefaultBodyLimit::max(250 * 1024 * 1024))
         .route("/", get(|| async { "Hello, World!" }))
