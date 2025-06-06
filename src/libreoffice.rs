@@ -91,16 +91,14 @@ fn analyze_missing_output_error(output_dir: &PathBuf, from: &str, to: &str) -> L
 
         println!("Files found in output directory: {:?}", files);
 
-        // If no files at all were created, likely input file issue
         if files.is_empty() {
+            // If no files at all were created, likely input file issue
             return LibreOfficeError::CorruptedInput(
                 "No output files were generated - input file may be corrupted or invalid"
                     .to_string(),
             );
-        }
-
-        // If files exist but not the expected format, conversion issue
-        if !files.is_empty() {
+        } else {
+            // If files exist but not the expected format, conversion issue
             return LibreOfficeError::UnsupportedConversion {
                 from: from.to_string(),
                 to: to.to_string(),
