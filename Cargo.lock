@@ -642,6 +642,7 @@ dependencies = [
  "bitflags",
  "dlopen2",
  "hyper",
+ "mime_guess",
  "num_enum",
  "once_cell",
  "parking_lot",
