@@ -31,8 +31,9 @@ pub async fn handler(mut multipart: Multipart) -> Response {
 
     match (file_bytes, input_format, output_format) {
         (Some(bytes), Some(input), Some(output)) => {
-            let converted_bytes =
-                libreoffice::convert_libreoffice(bytes, input, output.clone()).unwrap();
+            let converted_bytes = libreoffice::convert_libreoffice(bytes, input, output.clone())
+                .await
+                .unwrap();
 
             let filename = format!("converted.{}", &output);
             let content_type = mime_guess::from_ext(output.as_str())

@@ -10,7 +10,6 @@ use std::{
     ptr::null,
     rc::Rc,
     str::FromStr,
-    sync::atomic::Ordering,
 };
 
 use bitflags::bitflags;
@@ -18,7 +17,6 @@ use num_enum::FromPrimitive;
 use serde::{Deserialize, Serialize};
 
 pub use error::OfficeError;
-use sys::GLOBAL_OFFICE_LOCK;
 use thiserror::Error;
 pub use urls::DocUrl;
 
@@ -37,11 +35,6 @@ pub struct Office {
 impl Office {
     /// Creates a new LOK instance from the provided install path
     pub fn new<P: Into<PathBuf>>(install_path: P) -> Result<Office, OfficeError> {
-        // Try lock the global office lock
-        if GLOBAL_OFFICE_LOCK.swap(true, Ordering::SeqCst) {
-            return Err(OfficeError::InstanceLock);
-        }
-
         let mut install_path: PathBuf = install_path.into();
 
         // Resolve non absolute paths
@@ -53,8 +46,6 @@ impl Office {
         let raw = match unsafe { sys::OfficeRaw::init(&install_path) } {
             Ok(value) => value,
             Err(err) => {
-                // Unlock the global office lock on init failure
-                GLOBAL_OFFICE_LOCK.store(false, Ordering::SeqCst);
                 return Err(err);
             }
         };

@@ -3,24 +3,17 @@ use std::{
     os::raw::{c_char, c_int},
     path::Path,
     ptr::null_mut,
-    sync::atomic::{AtomicBool, Ordering},
 };
 
 use crate::libreofficekit::bindings::{
     LibreOfficeKit, LibreOfficeKitClass, LibreOfficeKitDocument,
 };
 use dlopen2::wrapper::{Container, WrapperApi};
-use once_cell::sync::OnceCell;
 
 use crate::libreofficekit::{error::OfficeError, urls::DocUrl};
 
-// Global instance of the LOK library container
-static LOK_CONTAINER: OnceCell<Container<LibreOfficeApi>> = OnceCell::new();
-
-/// Global lock to prevent creating multiple office instances
-/// at one time, all other instances must be dropped before
-/// a new one can be created
-pub(crate) static GLOBAL_OFFICE_LOCK: AtomicBool = AtomicBool::new(false);
+// Only keep the library container as static - this is fine since it's just loading the .so
+// static LOK_CONTAINER: OnceCell<Container<LibreOfficeApi>> = OnceCell::new();
 
 #[cfg(target_os = "windows")]
 const TARGET_LIB: &str = "sofficeapp.dll";
@@ -104,7 +97,7 @@ fn lok_open(install_path: &Path) -> Result<Container<LibreOfficeApi>, OfficeErro
 
 fn lok_init(install_path: &Path) -> Result<*mut LibreOfficeKit, OfficeError> {
     // Try initialize the container (If not already initialized)
-    let container = LOK_CONTAINER.get_or_try_init(|| lok_open(install_path))?;
+    let container = lok_open(install_path)?; // LOK_CONTAINER.get_or_try_init(|| lok_open(install_path))?;
 
     // Get the hook function
     let lok_hook = container
@@ -119,7 +112,7 @@ fn lok_init(install_path: &Path) -> Result<*mut LibreOfficeKit, OfficeError> {
     Ok(lok)
 }
 
-/// Raw office pointer access
+/// Raw office pointer access - now completely self-contained
 pub struct OfficeRaw {
     /// This pointer for LOK
     this: *mut LibreOfficeKit,
@@ -272,23 +265,25 @@ impl OfficeRaw {
         }
     }
 
-    /// Destroys the LOK instance and frees any other
-    /// allocated memory
-    pub unsafe fn destroy(&self) {
-        let destroy = (*self.class).destroy.expect("missing destroy function");
-        destroy(self.this);
+    /// Destroys the LOK instance and frees any other allocated memory
+    /// Made this safe to call multiple times
+    pub unsafe fn destroy(&mut self) {
+        if !self.this.is_null() {
+            if let Some(destroy) = (*self.class).destroy {
+                destroy(self.this);
+            }
+            // Mark as destroyed to prevent double-free
+            self.this = null_mut();
+        }
     }
 }
 
 impl Drop for OfficeRaw {
     fn drop(&mut self) {
-        // Destroy fails on second drop, so we comment it out
-        // This is because the LOK instance is already destroyed
-        // and the pointer is invalid?
+        // Skip the problematic destroy() call since it hangs
+        // Let the OS clean up the LibreOffice processes when the container exits
+        // If you want to try destroying (risky):
         // unsafe { self.destroy() }
-
-        // Unlock the global office lock
-        GLOBAL_OFFICE_LOCK.swap(false, Ordering::SeqCst);
     }
 }
 
@@ -324,9 +319,13 @@ impl DocumentRaw {
     }
 
     pub unsafe fn destroy(&mut self) {
-        let class = (*self.this).pClass;
-        let destroy = (*class).destroy.expect("missing destroy function");
-        destroy(self.this);
+        if !self.this.is_null() {
+            let class = (*self.this).pClass;
+            if let Some(destroy) = (*class).destroy {
+                destroy(self.this);
+            }
+            self.this = null_mut();
+        }
     }
 }
 
