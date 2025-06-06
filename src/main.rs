@@ -7,7 +7,6 @@ use tower_http::trace::TraceLayer;
 
 mod routes;
 mod libreoffice;
-mod libreofficekit;
 
 const PORT: u16 = 1234;
 

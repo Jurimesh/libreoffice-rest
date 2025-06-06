@@ -31,24 +31,43 @@ pub async fn handler(mut multipart: Multipart) -> Response {
 
     match (file_bytes, input_format, output_format) {
         (Some(bytes), Some(input), Some(output)) => {
-            let converted_bytes = libreoffice::convert_libreoffice(bytes, input, output.clone())
-                .await
-                .unwrap();
+            println!("Starting conversion request: {} -> {}", input, output);
 
-            let filename = format!("converted.{}", &output);
-            let content_type = mime_guess::from_ext(output.as_str())
-                .first_or_octet_stream()
-                .to_string();
+            // Use the new async CLI-based conversion
+            match libreoffice::convert_libreoffice(bytes, input, output.clone()).await {
+                Ok(converted_bytes) => {
+                    println!("Conversion completed successfully");
 
-            Response::builder()
-                .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, content_type)
-                .header(
-                    header::CONTENT_DISPOSITION,
-                    format!("attachment; filename=\"{}\"", filename),
-                )
-                .body(Body::from(converted_bytes))
-                .unwrap()
+                    let filename = format!("converted.{}", &output);
+                    let content_type = mime_guess::from_ext(output.as_str())
+                        .first_or_octet_stream()
+                        .to_string();
+
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .header(header::CONTENT_TYPE, content_type)
+                        .header(
+                            header::CONTENT_DISPOSITION,
+                            format!("attachment; filename=\"{}\"", filename),
+                        )
+                        .body(Body::from(converted_bytes))
+                        .unwrap()
+                }
+                Err(e) => {
+                    println!("Conversion failed: {}", e);
+
+                    let status = match e {
+                        libreoffice::LibreOfficeError::Timeout => StatusCode::REQUEST_TIMEOUT,
+                        libreoffice::LibreOfficeError::NotFound => StatusCode::SERVICE_UNAVAILABLE,
+                        _ => StatusCode::INTERNAL_SERVER_ERROR,
+                    };
+
+                    Response::builder()
+                        .status(status)
+                        .body(Body::from(format!("Conversion failed: {}", e)))
+                        .unwrap()
+                }
+            }
         }
         _ => Response::builder()
             .status(StatusCode::BAD_REQUEST)
