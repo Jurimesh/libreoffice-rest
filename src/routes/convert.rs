@@ -72,15 +72,15 @@ async fn extract_multipart_data(
 }
 
 async fn handle_conversion(bytes: Vec<u8>, input: String, output: String) -> Response<Body> {
-    println!("Starting conversion request: {} -> {}", input, output);
+    tracing::info!("Starting conversion request: {} -> {}", input, output);
 
     match libreoffice::convert_libreoffice(bytes, input, output.clone()).await {
         Ok(converted_bytes) => {
-            println!("Conversion completed successfully");
+            tracing::info!("Conversion completed successfully");
             create_success_response(converted_bytes, output)
         }
         Err(e) => {
-            println!("Conversion failed: {}", e);
+            tracing::error!("Conversion failed: {}", e);
             create_conversion_error_response(e)
         }
     }
