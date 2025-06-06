@@ -35,7 +35,7 @@ async fn extract_multipart_data(
             "file" => match field.bytes().await {
                 Ok(data) => file_bytes = Some(data.to_vec()),
                 Err(e) => {
-                    println!("Error reading file field: {}", e);
+                    tracing::debug!("Error reading file field: {}", e);
                     return Err(create_error_response(
                         StatusCode::BAD_REQUEST,
                         "Error reading uploaded file",
@@ -45,7 +45,7 @@ async fn extract_multipart_data(
             "input_format" => match field.text().await {
                 Ok(text) => input_format = Some(text),
                 Err(e) => {
-                    println!("Error reading input_format field: {}", e);
+                    tracing::debug!("Error reading input_format field: {}", e);
                     return Err(create_error_response(
                         StatusCode::BAD_REQUEST,
                         "Error reading input_format",
@@ -55,7 +55,7 @@ async fn extract_multipart_data(
             "output_format" => match field.text().await {
                 Ok(text) => output_format = Some(text),
                 Err(e) => {
-                    println!("Error reading output_format field: {}", e);
+                    tracing::debug!("Error reading output_format field: {}", e);
                     return Err(create_error_response(
                         StatusCode::BAD_REQUEST,
                         "Error reading output_format",
@@ -72,11 +72,11 @@ async fn extract_multipart_data(
 }
 
 async fn handle_conversion(bytes: Vec<u8>, input: String, output: String) -> Response<Body> {
-    tracing::info!("Starting conversion request: {} -> {}", input, output);
+    tracing::debug!("Starting conversion request: {} -> {}", input, output);
 
     match libreoffice::convert_libreoffice(bytes, input, output.clone()).await {
         Ok(converted_bytes) => {
-            tracing::info!("Conversion completed successfully");
+            tracing::debug!("Conversion completed successfully");
             create_success_response(converted_bytes, output)
         }
         Err(e) => {
@@ -103,7 +103,7 @@ fn create_success_response(converted_bytes: Vec<u8>, output_format: String) -> R
     {
         Ok(response) => response,
         Err(e) => {
-            println!("Error building success response: {}", e);
+            tracing::error!("Error building success response: {}", e);
             create_error_response(StatusCode::INTERNAL_SERVER_ERROR, "Error building response")
         }
     }
@@ -146,7 +146,7 @@ fn create_error_response(status: StatusCode, message: &str) -> Response<Body> {
         .status(status)
         .body(Body::from(message.to_string()))
         .unwrap_or_else(|e| {
-            println!("Failed to build error response: {}", e);
+            tracing::error!("Failed to build error response: {}", e);
             Response::new(Body::from("Internal server error"))
         })
 }

@@ -89,7 +89,7 @@ fn analyze_missing_output_error(output_dir: &PathBuf, from: &str, to: &str) -> L
             .map(|entry| entry.file_name().to_string_lossy().to_string())
             .collect();
 
-        println!("Files found in output directory: {:?}", files);
+        tracing::debug!("Files found in output directory: {:?}", files);
 
         if files.is_empty() {
             // If no files at all were created, likely input file issue
@@ -116,7 +116,7 @@ pub async fn convert_libreoffice_async(
     from: String,
     to: String,
 ) -> Result<Vec<u8>> {
-    println!("Starting async CLI conversion: {} -> {}", from, to);
+    tracing::debug!("Starting async CLI conversion: {} -> {}", from, to);
 
     let input_filename = format!("document.{}", from);
     let (input_path, output_dir, _temp_dir) =
@@ -126,10 +126,10 @@ pub async fn convert_libreoffice_async(
     tokio::fs::write(&input_path, input_buf)
         .await
         .map_err(LibreOfficeError::Io)?;
-    println!("Input file written: {:?}", input_path);
+    tracing::debug!("Input file written: {:?}", input_path);
 
     // Run LibreOffice conversion with timeout
-    println!("Running LibreOffice conversion...");
+    tracing::debug!("Running LibreOffice conversion...");
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(60), // 60 second timeout
         TokioCommand::new("libreoffice")
@@ -155,15 +155,15 @@ pub async fn convert_libreoffice_async(
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
-        println!("LibreOffice stderr: {}", stderr);
-        println!("LibreOffice stdout: {}", stdout);
+        tracing::debug!("LibreOffice stderr: {}", stderr);
+        tracing::debug!("LibreOffice stdout: {}", stdout);
 
         // Analyze the error output for specific issues
         let error = analyze_libreoffice_error(&stderr, &stdout, &from, &to);
         return Err(error);
     }
 
-    println!("LibreOffice conversion completed successfully");
+    tracing::debug!("LibreOffice conversion completed successfully");
 
     // Find and read the output file
     let expected_output = output_dir.join(format!("document.{}", to));
@@ -189,7 +189,7 @@ pub async fn convert_libreoffice_async(
         match found_file {
             Some(path) => {
                 let output_data = tokio::fs::read(path).await.map_err(LibreOfficeError::Io)?;
-                println!(
+                tracing::debug!(
                     "Conversion completed, output size: {} bytes",
                     output_data.len()
                 );
@@ -206,7 +206,7 @@ pub async fn convert_libreoffice_async(
     let output_data = tokio::fs::read(expected_output)
         .await
         .map_err(LibreOfficeError::Io)?;
-    println!(
+    tracing::debug!(
         "Conversion completed, output size: {} bytes",
         output_data.len()
     );
