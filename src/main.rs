@@ -1,16 +1,24 @@
-use axum::{Router, routing::get};
+use axum::{
+    Router,
+    extract::DefaultBodyLimit,
+    routing::{get, post},
+};
+use tower_http::trace::TraceLayer;
 
+mod libreoffice;
 mod routes;
 
-const PORT: u16 = 1234;
+const PORT: u16 = 8080;
 
 #[tokio::main]
 async fn main() {
-    // build our application with a single route
     let app = Router::new()
+        .layer(DefaultBodyLimit::max(250 * 1024 * 1024))
         .route("/", get(|| async { "Hello, World!" }))
         .route("/health", get(routes::health::handler))
-        .route("/ready", get(routes::ready::handler));
+        .route("/ready", get(routes::ready::handler))
+        .route("/convert", post(routes::convert::handler))
+        .layer(TraceLayer::new_for_http());
 
     let addr: String = format!("0.0.0.0:{}", PORT);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();

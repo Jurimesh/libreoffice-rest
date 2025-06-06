@@ -1,69 +1,61 @@
 # ======= BUILD IMAGE =======
-FROM node:22.13.1-alpine AS build
+FROM rust:1.80.0-slim-bookworm AS build
 WORKDIR /usr/src/app
 
 # Install packages for building native packages
-RUN apk update
-RUN apk add --no-cache make gcc g++ python3 libressl-dev
-RUN rm -rf /var/cache/apk/*
+RUN apt-get update && \
+    apt-get install -y \
+    pkg-config \
+    libssl-dev \
+    libreoffice \
+    libreoffice-dev \
+    build-essential && \
+    rm -rf /var/lib/apt/lists/*
 
-# pnpm install/build
-RUN npm install -g pnpm
+# Copy Cargo files first for better caching
+COPY Cargo.toml Cargo.lock ./
 
-# Copy files...
-COPY . .
+# Create library entry point for dependency caching
+RUN mkdir -p src && echo "" > src/lib.rs
 
-# Cleanup in case of local run
-RUN rm -rf node_modules dist server-dist .env
+# Build dependencies only
+RUN cargo build --release
 
-RUN pnpm install --frozen-lockfile
-RUN pnpm run build:server
+# Copy source code
+COPY src ./src
+RUN touch src/lib.rs
+
+# Build the application in release mode
+RUN cargo build --release
 
 # ===== PRODUCTION IMAGE =====
-FROM node:22.13.1-alpine
+FROM debian:bookworm-slim
 
-RUN apk update
-RUN apk add --no-cache \
-    make \
-    gcc \
-    g++ \
-    python3 \
-    py3-pip \
-    libressl-dev \
-    dumb-init \
-    # Remove individual libreoffice packages and install the full one
+RUN apt-get update && \
+    apt-get install -y \
     libreoffice \
-    python3-dev \
-    musl-dev \
-    py3-setuptools \
-    py3-wheel \
-    ttf-dejavu \
-    font-noto \
-    wget
+    fonts-dejavu-core \
+    fonts-noto \
+    dumb-init \
+    wget \
+    ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
 
-# Add UNO check script
-RUN wget -O find_uno.py https://gist.githubusercontent.com/regebro/036da022dc7d5241a0ee97efdf1458eb/raw/find_uno.py && \
-    python3 find_uno.py && \
-    rm find_uno.py
+# Create a non-root user
+RUN groupadd -g 1000 appuser && \
+    useradd -d /home/appuser -s /bin/bash -u 1000 -g appuser appuser
 
-# Create and use a virtual environment for Python packages
-RUN python3 -m venv --system-site-packages /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+ENV PORT=1234
 
-# Now install unoserver in the virtual environment
-RUN pip3 install unoserver
-
-ENV NODE_ENV production
-ENV PORT 8080
-
-# Node user is 1000:1000
+# Switch to non-root user
 USER 1000
 WORKDIR /usr/src/app
 
-# Copy local code to the container image
-COPY --from=build --chown=1000:1000 /usr/src/app /usr/src/app
+# Copy the built binary from the build stage
+COPY --from=build --chown=1000:1000 /usr/src/app/target/release/libreoffice-rest ./libreoffice-rest
 
-# Expose a port
-EXPOSE 8080
+# Expose the port
+EXPOSE 1234
 
-CMD ["dumb-init", "node", "--max-old-space-size=1024", "--enable-source-maps", "./dist/bundle.prod.js"]
+# Run the Rust server
+CMD ["dumb-init", "./libreoffice-rest"]
