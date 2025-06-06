@@ -41,9 +41,12 @@ RUN apt-get update && \
     ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user
+# Create a non-root user and setup directories
 RUN groupadd -g 1000 appuser && \
-    useradd -d /home/appuser -s /bin/bash -u 1000 -g appuser appuser
+    useradd -d /home/appuser -s /bin/bash -u 1000 -g appuser appuser && \
+    mkdir -p /home/appuser/.cache && \
+    mkdir -p /home/appuser/.config && \
+    chown -R appuser:appuser /home/appuser
 
 ENV PORT=1234
 
