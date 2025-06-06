@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::process::Command;
 use tempfile::{TempDir, tempdir};
 use tokio::process::Command as TokioCommand;
 
@@ -9,14 +8,18 @@ pub enum LibreOfficeError {
     Io(#[from] std::io::Error),
     #[error("Conversion timeout")]
     Timeout,
-    #[error("Invalid file format: {0}")]
-    InvalidFormat(String),
-    #[error("LibreOffice not found")]
-    NotFound,
     #[error("Conversion failed: {0}")]
     ConversionFailed(String),
     #[error("Output file not found after conversion")]
     OutputNotFound,
+    #[error("Corrupted or invalid input file: {0}")]
+    CorruptedInput(String),
+    #[error("Unsupported format conversion from {from} to {to}")]
+    UnsupportedConversion { from: String, to: String },
+    #[error("File is password protected")]
+    PasswordProtected,
+    #[error("Input file is empty or invalid")]
+    EmptyOrInvalidInput,
 }
 
 pub type Result<T> = std::result::Result<T, LibreOfficeError>;
@@ -29,92 +32,84 @@ fn temp_dir_with_files(input_name: &str) -> std::io::Result<(PathBuf, PathBuf, T
     Ok((input_path, output_dir, temp_dir))
 }
 
-/// Synchronous version using std::process::Command
-pub fn convert_libreoffice_sync(input_buf: Vec<u8>, from: String, to: String) -> Result<Vec<u8>> {
-    println!("Starting CLI conversion: {} -> {}", from, to);
+/// Analyzes LibreOffice error output to provide more specific error messages
+fn analyze_libreoffice_error(stderr: &str, stdout: &str, from: &str, to: &str) -> LibreOfficeError {
+    let combined_output = format!("{} {}", stderr, stdout).to_lowercase();
 
-    let input_filename = format!("document.{}", from);
-    let (input_path, output_dir, _temp_dir) =
-        temp_dir_with_files(&input_filename).map_err(LibreOfficeError::Io)?;
-
-    // Write input file
-    std::fs::write(&input_path, input_buf).map_err(LibreOfficeError::Io)?;
-    println!("Input file written: {:?}", input_path);
-
-    // Run LibreOffice conversion
-    println!("Running LibreOffice conversion...");
-    let output = Command::new("libreoffice")
-        .args(&[
-            "--headless",
-            "--convert-to",
-            &to,
-            "--outdir",
-            output_dir.to_str().unwrap(),
-            input_path.to_str().unwrap(),
-        ])
-        .output()
-        .map_err(LibreOfficeError::Io)?;
-
-    // Check if conversion succeeded
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        println!("LibreOffice stderr: {}", stderr);
-        println!("LibreOffice stdout: {}", stdout);
-
-        return Err(LibreOfficeError::ConversionFailed(format!(
-            "LibreOffice exited with code {:?}. stderr: {}, stdout: {}",
-            output.status.code(),
-            stderr,
-            stdout
-        )));
+    // Check for specific error patterns
+    if combined_output.contains("password") || combined_output.contains("encrypted") {
+        return LibreOfficeError::PasswordProtected;
     }
 
-    println!("LibreOffice conversion completed successfully");
+    if combined_output.contains("format") && combined_output.contains("not supported") {
+        return LibreOfficeError::UnsupportedConversion {
+            from: from.to_string(),
+            to: to.to_string(),
+        };
+    }
 
-    // Find the output file (LibreOffice changes the extension)
-    let expected_output = output_dir.join(format!("document.{}", to));
+    if combined_output.contains("corrupt")
+        || combined_output.contains("damaged")
+        || combined_output.contains("invalid")
+        || combined_output.contains("parse error")
+        || combined_output.contains("bad file")
+    {
+        return LibreOfficeError::CorruptedInput(format!(
+            "File appears to be corrupted or in an invalid format"
+        ));
+    }
 
-    if !expected_output.exists() {
-        // Try to find any file with the target extension
-        let entries = std::fs::read_dir(&output_dir).map_err(LibreOfficeError::Io)?;
-        let mut found_file = None;
+    if combined_output.contains("empty")
+        || combined_output.contains("no content")
+        || combined_output.contains("zero bytes")
+    {
+        return LibreOfficeError::EmptyOrInvalidInput;
+    }
 
-        for entry in entries {
-            let entry = entry.map_err(LibreOfficeError::Io)?;
-            let path = entry.path();
+    if combined_output.contains("filter") && combined_output.contains("not found") {
+        return LibreOfficeError::UnsupportedConversion {
+            from: from.to_string(),
+            to: to.to_string(),
+        };
+    }
 
-            if let Some(ext) = path.extension() {
-                if ext == to.as_str() {
-                    found_file = Some(path);
-                    break;
-                }
-            }
+    // Default to generic conversion failed with full output
+    LibreOfficeError::ConversionFailed(format!(
+        "LibreOffice conversion failed. stderr: {}, stdout: {}",
+        stderr, stdout
+    ))
+}
+
+/// Analyzes why the output file is missing to provide more specific error messages
+fn analyze_missing_output_error(output_dir: &PathBuf, from: &str, to: &str) -> LibreOfficeError {
+    // Check what files actually exist in the output directory
+    if let Ok(entries) = std::fs::read_dir(output_dir) {
+        let files: Vec<String> = entries
+            .filter_map(|entry| entry.ok())
+            .map(|entry| entry.file_name().to_string_lossy().to_string())
+            .collect();
+
+        println!("Files found in output directory: {:?}", files);
+
+        // If no files at all were created, likely input file issue
+        if files.is_empty() {
+            return LibreOfficeError::CorruptedInput(
+                "No output files were generated - input file may be corrupted or invalid"
+                    .to_string(),
+            );
         }
 
-        match found_file {
-            Some(path) => {
-                let output_data = std::fs::read(path).map_err(LibreOfficeError::Io)?;
-                println!(
-                    "Conversion completed, output size: {} bytes",
-                    output_data.len()
-                );
-                return Ok(output_data);
-            }
-            None => {
-                return Err(LibreOfficeError::OutputNotFound);
-            }
+        // If files exist but not the expected format, conversion issue
+        if !files.is_empty() {
+            return LibreOfficeError::UnsupportedConversion {
+                from: from.to_string(),
+                to: to.to_string(),
+            };
         }
     }
 
-    // Read the converted file
-    let output_data = std::fs::read(expected_output).map_err(LibreOfficeError::Io)?;
-    println!(
-        "Conversion completed, output size: {} bytes",
-        output_data.len()
-    );
-
-    Ok(output_data)
+    // Fallback to generic error
+    LibreOfficeError::OutputNotFound
 }
 
 /// Async version using tokio::process::Command with timeout
@@ -158,19 +153,16 @@ pub async fn convert_libreoffice_async(
         Err(_) => return Err(LibreOfficeError::Timeout),
     };
 
-    // Check if conversion succeeded
+    // Check if conversion succeeded and analyze the error
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         let stdout = String::from_utf8_lossy(&output.stdout);
         println!("LibreOffice stderr: {}", stderr);
         println!("LibreOffice stdout: {}", stdout);
 
-        return Err(LibreOfficeError::ConversionFailed(format!(
-            "LibreOffice exited with code {:?}. stderr: {}, stdout: {}",
-            output.status.code(),
-            stderr,
-            stdout
-        )));
+        // Analyze the error output for specific issues
+        let error = analyze_libreoffice_error(&stderr, &stdout, &from, &to);
+        return Err(error);
     }
 
     println!("LibreOffice conversion completed successfully");
@@ -206,7 +198,8 @@ pub async fn convert_libreoffice_async(
                 return Ok(output_data);
             }
             None => {
-                return Err(LibreOfficeError::OutputNotFound);
+                // No output file found - this could indicate various issues
+                return Err(analyze_missing_output_error(&output_dir, &from, &to));
             }
         }
     }
