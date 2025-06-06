@@ -18,7 +18,6 @@ async fn main() {
 
     let app = Router::new()
         .layer(DefaultBodyLimit::max(250 * 1024 * 1024))
-        .route("/", get(|| async { "Hello, World!" }))
         .route("/health", get(routes::health::handler))
         .route("/ready", get(routes::ready::handler))
         .route("/convert", post(routes::convert::handler))
