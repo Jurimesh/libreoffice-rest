@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::Mutex};
 
-use libreofficekit::{DocUrl, Office, OfficeError};
+use crate::libreofficekit::{DocUrl, Office, OfficeError};
 use tempfile::{TempDir, tempdir};
 use tokio::task;
 

@@ -466,18 +466,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc2fdfdbff08affe55bb779f33b053aa1fe5dd5b54c257343c17edfa55711bdb"
 dependencies = [
  "bytes",
- "futures-channel",
  "futures-core",
- "futures-util",
  "http",
  "http-body",
  "hyper",
- "libc",
  "pin-project-lite",
- "socket2",
  "tokio",
  "tower-service",
- "tracing",
 ]
 
 [[package]]
@@ -644,30 +639,18 @@ name = "libreoffice-rest"
 version = "0.1.0"
 dependencies = [
  "axum",
- "http-body-util",
- "hyper",
- "hyper-util",
- "libreofficekit",
- "tempfile",
- "thiserror 2.0.12",
- "tokio",
- "tower-http",
-]
-
-[[package]]
-name = "libreofficekit"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "efc1e074bc9b184311bedc857d41556d0dfdd635bdc79c15c20d431f94cdf278"
-dependencies = [
  "bitflags",
  "dlopen2",
+ "hyper",
  "num_enum",
  "once_cell",
  "parking_lot",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tower-http",
  "url",
 ]
 
@@ -1084,31 +1067,11 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52"
-dependencies = [
- "thiserror-impl 1.0.69",
-]
-
-[[package]]
-name = "thiserror"
 version = "2.0.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "567b8a2dae586314f7be2a752ec7474332959c6460e02bde30d702a66d488708"
 dependencies = [
- "thiserror-impl 2.0.12",
-]
-
-[[package]]
-name = "thiserror-impl"
-version = "1.0.69"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
+ "thiserror-impl",
 ]
 
 [[package]]

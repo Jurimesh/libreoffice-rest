@@ -1,5 +1,5 @@
 # ======= BUILD IMAGE =======
-FROM rust:1.80.0-slim-bookworm AS build
+FROM rust:1.87.0-slim-bookworm AS build
 WORKDIR /usr/src/app
 
 # Install packages for building native packages
