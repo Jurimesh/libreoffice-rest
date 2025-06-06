@@ -9,11 +9,12 @@ use crate::libreofficekit::bindings::{
     LibreOfficeKit, LibreOfficeKitClass, LibreOfficeKitDocument,
 };
 use dlopen2::wrapper::{Container, WrapperApi};
+use once_cell::sync::OnceCell;
 
 use crate::libreofficekit::{error::OfficeError, urls::DocUrl};
 
 // Only keep the library container as static - this is fine since it's just loading the .so
-// static LOK_CONTAINER: OnceCell<Container<LibreOfficeApi>> = OnceCell::new();
+static LOK_CONTAINER: OnceCell<Container<LibreOfficeApi>> = OnceCell::new();
 
 #[cfg(target_os = "windows")]
 const TARGET_LIB: &str = "sofficeapp.dll";
@@ -97,7 +98,7 @@ fn lok_open(install_path: &Path) -> Result<Container<LibreOfficeApi>, OfficeErro
 
 fn lok_init(install_path: &Path) -> Result<*mut LibreOfficeKit, OfficeError> {
     // Try initialize the container (If not already initialized)
-    let container = lok_open(install_path)?; // LOK_CONTAINER.get_or_try_init(|| lok_open(install_path))?;
+    let container = LOK_CONTAINER.get_or_try_init(|| lok_open(install_path))?;
 
     // Get the hook function
     let lok_hook = container
