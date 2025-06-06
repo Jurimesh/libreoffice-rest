@@ -277,24 +277,18 @@ impl OfficeRaw {
     pub unsafe fn destroy(&self) {
         let destroy = (*self.class).destroy.expect("missing destroy function");
         destroy(self.this);
-
-        // Free the callback if allocated
-        // self.free_callback();
     }
 }
 
 impl Drop for OfficeRaw {
     fn drop(&mut self) {
-        println!("OfficeRaw::drop() - About to destroy LOK instance");
-        unsafe { self.destroy() }
-        println!("OfficeRaw::drop() - LOK instance destroyed");
+        // Destroy fails on second drop, so we comment it out
+        // This is because the LOK instance is already destroyed
+        // and the pointer is invalid?
+        // unsafe { self.destroy() }
 
         // Unlock the global office lock
-        let was_locked = GLOBAL_OFFICE_LOCK.swap(false, Ordering::SeqCst);
-        println!(
-            "OfficeRaw::drop() - Global lock released (was_locked: {})",
-            was_locked
-        );
+        GLOBAL_OFFICE_LOCK.swap(false, Ordering::SeqCst);
     }
 }
 
