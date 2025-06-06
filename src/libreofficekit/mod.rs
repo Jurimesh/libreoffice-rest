@@ -4,13 +4,11 @@ mod sys;
 pub mod urls;
 
 use std::{
-    collections::HashMap,
-    ffi::{CString, c_ulonglong},
+    ffi::CString,
     fmt::Display,
-    os::raw::{c_char, c_int},
     path::{Path, PathBuf},
     ptr::null,
-    rc::{Rc, Weak},
+    rc::Rc,
     str::FromStr,
     sync::atomic::Ordering,
 };
@@ -34,57 +32,6 @@ pub use urls::DocUrl;
 #[derive(Clone)]
 pub struct Office {
     raw: Rc<sys::OfficeRaw>,
-}
-
-/// Instance of [Office] provided to callbacks
-///
-/// Only holds a week reference which is passed to callback
-/// functions, provides functions that should only be used
-/// from within the callback
-#[derive(Clone)]
-pub struct CallbackOffice {
-    raw: Weak<sys::OfficeRaw>,
-}
-
-impl CallbackOffice {
-    /// Creates a full [Office] reference from the callback value
-    pub fn into_office(self) -> Result<Office, OfficeError> {
-        // Obtain raw access
-        let raw = self.raw.upgrade().ok_or(OfficeError::InstanceDropped)?;
-        Ok(Office { raw })
-    }
-
-    /// Sets the password office should try to decrypt the document with.
-    ///
-    /// Passwords will only be requested if the [OfficeOptionalFeatures::DOCUMENT_PASSWORD]
-    /// optional feature is enabled, otherwise the callback will not run.
-    ///
-    /// ## Important
-    ///
-    /// Set to [None] when the password should not be used / is unknown. The
-    /// callback will continue to be invoked until either the correct password
-    /// is specified or [None] is provided.
-    pub fn set_document_password(
-        &self,
-        url: &DocUrl,
-        password: Option<&str>,
-    ) -> Result<(), OfficeError> {
-        // Obtain raw access
-        let raw = self.raw.upgrade().ok_or(OfficeError::InstanceDropped)?;
-
-        let password = match password {
-            Some(value) => CString::new(value)?,
-            None => {
-                // Password is unset
-                unsafe { raw.set_document_password(url, null())? };
-                return Ok(());
-            }
-        };
-
-        unsafe { raw.set_document_password(url, password.as_ptr())? };
-
-        Ok(())
-    }
 }
 
 impl Office {
@@ -220,18 +167,6 @@ impl Office {
         Ok(latest)
     }
 
-    /// Obtains the available filter types / file formats from LibreOffice
-    pub fn get_filter_types(&self) -> Result<FilterTypes, OfficeError> {
-        let value = unsafe { self.raw.get_filter_types()? };
-
-        let value = value.to_str().map_err(OfficeError::InvalidUtf8String)?;
-
-        let value: FilterTypes =
-            serde_json::from_str(value).map_err(OfficeError::InvalidFilterTypes)?;
-
-        Ok(value)
-    }
-
     /// Obtains the version information from the LibreOffice install
     pub fn get_version_info(&self) -> Result<OfficeVersionInfo, OfficeError> {
         let value = unsafe { self.raw.get_version_info()? };
@@ -244,135 +179,10 @@ impl Office {
         Ok(value)
     }
 
-    /// Signs a document at the provided `url` using the provided `certificate` and `private_key`
-    pub fn sign_document(
-        &self,
-        url: &DocUrl,
-        certificate: &[u8],
-        private_key: &[u8],
-    ) -> Result<bool, OfficeError> {
-        // Lengths cannot exceed signed 32bit limit
-        debug_assert!(certificate.len() <= i32::MAX as usize);
-        debug_assert!(private_key.len() <= i32::MAX as usize);
-
-        let result = unsafe {
-            self.raw.sign_document(
-                url,
-                certificate.as_ptr(),
-                certificate.len() as i32,
-                private_key.as_ptr(),
-                private_key.len() as i32,
-            )?
-        };
-
-        Ok(result)
-    }
-
     /// Loads a document from the provided `url`
     pub fn document_load(&self, url: &DocUrl) -> Result<Document, OfficeError> {
         let raw = unsafe { self.raw.document_load(url)? };
         Ok(Document { raw })
-    }
-
-    /// Loads a document with additional options
-    pub fn document_load_with_options(
-        &self,
-        url: &DocUrl,
-        options: &str,
-    ) -> Result<Document, OfficeError> {
-        let options = CString::new(options)?;
-        let raw = unsafe { self.raw.document_load_with_options(url, options.as_ptr())? };
-        Ok(Document { raw })
-    }
-
-    /// Sends a dialog event
-    pub fn send_dialog_event(
-        &self,
-        window_id: c_ulonglong,
-        arguments: &str,
-    ) -> Result<(), OfficeError> {
-        let arguments = CString::new(arguments)?;
-
-        unsafe { self.raw.send_dialog_event(window_id, arguments.as_ptr())? };
-
-        Ok(())
-    }
-
-    /// Sets optional feature flags
-    pub fn set_optional_features(
-        &self,
-        features: OfficeOptionalFeatures,
-    ) -> Result<(), OfficeError> {
-        unsafe { self.raw.set_optional_features(features.bits())? };
-
-        Ok(())
-    }
-
-    /// Registers a callback that will run when Office has some event to inform the
-    /// library about (Status indicators, password prompts etc)
-    pub fn register_callback<F>(&self, mut callback: F) -> Result<(), OfficeError>
-    where
-        F: FnMut(CallbackOffice, CallbackType, *const c_char) + 'static,
-    {
-        // Create an office instance to use within the callbacks
-        let callback_office = CallbackOffice {
-            raw: Rc::downgrade(&self.raw),
-        };
-
-        // Create callback wrapper that maps the type
-        let callback = move |ty, payload| {
-            let callback_office = Clone::clone(&callback_office);
-            let ty = CallbackType::from_primitive(ty);
-            callback(callback_office, ty, payload)
-        };
-
-        unsafe {
-            self.raw.register_callback(callback)?;
-        }
-
-        Ok(())
-    }
-
-    /// Clears any current callback registered with [Office::register_callback]
-    pub fn clear_callback(&self) -> Result<(), OfficeError> {
-        unsafe {
-            self.raw.clear_callback()?;
-        }
-
-        Ok(())
-    }
-
-    /// Runs a macro at the provided `url`
-    pub fn run_macro(&self, url: &str) -> Result<bool, OfficeError> {
-        let url = CString::new(url)?;
-        let result = unsafe { self.raw.run_macro(url.as_ptr())? };
-        Ok(result)
-    }
-
-    /// Utility function to dump the LibreOffice current state as a string
-    /// for debugging
-    pub fn dump_state(&self) -> Result<String, OfficeError> {
-        let value = unsafe { self.raw.dump_state()? };
-        Ok(value.to_string_lossy().to_string())
-    }
-
-    /// Sets an option in LibreOffice
-    pub fn set_option(&self, option: &str, value: &str) -> Result<(), OfficeError> {
-        let option = CString::new(option)?;
-        let value = CString::new(value)?;
-
-        unsafe { self.raw.set_option(option.as_ptr(), value.as_ptr())? }
-
-        Ok(())
-    }
-
-    /// Negative number tells LibreOffice to re-fill its memory caches
-    ///
-    /// Large positive number (>=1000) encourages immediate maximum memory saving.
-    pub fn trim_memory(&self, target: c_int) -> Result<(), OfficeError> {
-        unsafe { self.raw.trim_memory(target)? };
-
-        Ok(())
     }
 }
 
@@ -409,39 +219,6 @@ impl Document {
     pub fn get_document_type(&mut self) -> Result<DocumentType, OfficeError> {
         let result = unsafe { self.raw.get_document_type()? };
         Ok(DocumentType::from_primitive(result))
-    }
-}
-
-/// Filter types supported by office
-#[derive(Debug, Deserialize)]
-pub struct FilterTypes {
-    /// Mapping between the filter name and details
-    #[serde(flatten)]
-    pub values: HashMap<String, FilterType>,
-}
-
-impl FilterTypes {
-    /// Get the filter type name by mime type
-    pub fn get_by_mime(&self, mime: &str) -> Option<&str> {
-        self.values
-            .iter()
-            // Find filter with matching media type
-            .find(|(_, value)| value.media_type.eq(mime))
-            // Map to only include the key
-            .map(|(key, _)| key.as_str())
-    }
-
-    /// Checks if the provided mime type is supported for a filter type
-    pub fn is_mime_supported(&self, mime: &str) -> bool {
-        self.get_by_mime(mime).is_some()
-    }
-
-    /// Gets a list of the supported filter mime types
-    pub fn supported_mime_types(&self) -> Vec<&str> {
-        self.values
-            .values()
-            .map(|value| value.media_type.as_str())
-            .collect()
     }
 }
 

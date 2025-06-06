@@ -66,13 +66,6 @@ pub struct LibreOfficeKitClass {
     pub getError: ::std::option::Option<
         unsafe extern "C" fn(pThis: *mut LibreOfficeKit) -> *mut ::std::os::raw::c_char,
     >,
-    pub documentLoadWithOptions: ::std::option::Option<
-        unsafe extern "C" fn(
-            pThis: *mut LibreOfficeKit,
-            pURL: *const ::std::os::raw::c_char,
-            pOptions: *const ::std::os::raw::c_char,
-        ) -> *mut LibreOfficeKitDocument,
-    >,
     pub freeError: ::std::option::Option<unsafe extern "C" fn(pFree: *mut ::std::os::raw::c_char)>,
     pub registerCallback: ::std::option::Option<
         unsafe extern "C" fn(
@@ -87,31 +80,8 @@ pub struct LibreOfficeKitClass {
     pub setOptionalFeatures: ::std::option::Option<
         unsafe extern "C" fn(pThis: *mut LibreOfficeKit, features: ::std::os::raw::c_ulonglong),
     >,
-    pub setDocumentPassword: ::std::option::Option<
-        unsafe extern "C" fn(
-            pThis: *mut LibreOfficeKit,
-            pURL: *const ::std::os::raw::c_char,
-            pPassword: *const ::std::os::raw::c_char,
-        ),
-    >,
     pub getVersionInfo: ::std::option::Option<
         unsafe extern "C" fn(pThis: *mut LibreOfficeKit) -> *mut ::std::os::raw::c_char,
-    >,
-    pub runMacro: ::std::option::Option<
-        unsafe extern "C" fn(
-            pThis: *mut LibreOfficeKit,
-            pURL: *const ::std::os::raw::c_char,
-        ) -> ::std::os::raw::c_int,
-    >,
-    pub signDocument: ::std::option::Option<
-        unsafe extern "C" fn(
-            pThis: *mut LibreOfficeKit,
-            pUrl: *const ::std::os::raw::c_char,
-            pCertificateBinary: *const ::std::os::raw::c_uchar,
-            nCertificateBinarySize: ::std::os::raw::c_int,
-            pPrivateKeyBinary: *const ::std::os::raw::c_uchar,
-            nPrivateKeyBinarySize: ::std::os::raw::c_int,
-        ) -> bool,
     >,
     pub runLoop: ::std::option::Option<
         unsafe extern "C" fn(
@@ -119,13 +89,6 @@ pub struct LibreOfficeKitClass {
             pPollCallback: LibreOfficeKitPollCallback,
             pWakeCallback: LibreOfficeKitWakeCallback,
             pData: *mut ::std::os::raw::c_void,
-        ),
-    >,
-    pub sendDialogEvent: ::std::option::Option<
-        unsafe extern "C" fn(
-            pThis: *mut LibreOfficeKit,
-            nLOKWindowId: ::std::os::raw::c_ulonglong,
-            pArguments: *const ::std::os::raw::c_char,
         ),
     >,
     pub setOption: ::std::option::Option<
