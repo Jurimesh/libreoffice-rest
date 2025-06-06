@@ -26,6 +26,6 @@ async fn main() {
 
     let addr: String = format!("0.0.0.0:{}", PORT);
     let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
-    println!("Starting server on {}", &addr);
+    tracing::info!("Starting server on {}", &addr);
     axum::serve(listener, app).await.unwrap();
 }
