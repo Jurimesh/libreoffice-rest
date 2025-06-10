@@ -12,18 +12,12 @@ pub async fn handler(mut multipart: Multipart) -> Response {
             Err(response) => return response,
         };
 
-    match (file_bytes, input_format, output_format) {
-        (Some(bytes), Some(input), Some(output)) => handle_conversion(bytes, input, output).await,
-        _ => create_error_response(
-            StatusCode::BAD_REQUEST,
-            "Missing required fields: file, input_format, output_format",
-        ),
-    }
+    handle_conversion(file_bytes, input_format, output_format).await
 }
 
 async fn extract_multipart_data(
     multipart: &mut Multipart,
-) -> Result<(Option<Vec<u8>>, Option<String>, Option<String>), Response<Body>> {
+) -> Result<(Vec<u8>, String, String), Response<Body>> {
     let mut file_bytes: Option<Vec<u8>> = None;
     let mut input_format: Option<String> = None;
     let mut output_format: Option<String> = None;
@@ -32,52 +26,55 @@ async fn extract_multipart_data(
         let name = field.name().unwrap_or("");
 
         match name {
-            "file" => match field.bytes().await {
-                Ok(data) => file_bytes = Some(data.to_vec()),
-                Err(e) => {
-                    tracing::debug!("Error reading file field: {}", e);
-                    return Err(create_error_response(
-                        StatusCode::BAD_REQUEST,
-                        "Error reading uploaded file",
-                    ));
-                }
-            },
-            "input_format" => match field.text().await {
-                Ok(text) => input_format = Some(text),
-                Err(e) => {
+            "file" => {
+                file_bytes = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|e| {
+                            tracing::debug!("Error reading file field: {}", e);
+                            create_error_response(
+                                StatusCode::BAD_REQUEST,
+                                "Error reading uploaded file",
+                            )
+                        })?
+                        .to_vec(),
+                )
+            }
+            "input_format" => {
+                input_format = Some(field.text().await.map_err(|e| {
                     tracing::debug!("Error reading input_format field: {}", e);
-                    return Err(create_error_response(
-                        StatusCode::BAD_REQUEST,
-                        "Error reading input_format",
-                    ));
-                }
-            },
-            "output_format" => match field.text().await {
-                Ok(text) => output_format = Some(text),
-                Err(e) => {
+                    create_error_response(StatusCode::BAD_REQUEST, "Error reading input_format")
+                })?)
+            }
+            "output_format" => {
+                output_format = Some(field.text().await.map_err(|e| {
                     tracing::debug!("Error reading output_format field: {}", e);
-                    return Err(create_error_response(
-                        StatusCode::BAD_REQUEST,
-                        "Error reading output_format",
-                    ));
-                }
-            },
+                    create_error_response(StatusCode::BAD_REQUEST, "Error reading output_format")
+                })?)
+            }
             _ => {
                 // Skip unknown fields
             }
         }
     }
 
-    Ok((file_bytes, input_format, output_format))
+    match (file_bytes, input_format, output_format) {
+        (Some(bytes), Some(input), Some(output)) => Ok((bytes, input, output)),
+        _ => Err(create_error_response(
+            StatusCode::BAD_REQUEST,
+            "Missing required fields: file, input_format, output_format",
+        )),
+    }
 }
 
 async fn handle_conversion(bytes: Vec<u8>, input: String, output: String) -> Response<Body> {
     tracing::debug!("Starting conversion request: {} -> {}", input, output);
 
-    match libreoffice::convert_libreoffice(bytes, input, output.clone()).await {
+    match libreoffice::convert_libreoffice(bytes, &input, &output).await {
         Ok(converted_bytes) => {
             tracing::debug!("Conversion completed successfully");
-            create_success_response(converted_bytes, output)
+            create_success_response(converted_bytes, &output)
         }
         Err(e) => {
             tracing::error!("Conversion failed: {}", e);
@@ -86,9 +83,9 @@ async fn handle_conversion(bytes: Vec<u8>, input: String, output: String) -> Res
     }
 }
 
-fn create_success_response(converted_bytes: Vec<u8>, output_format: String) -> Response<Body> {
+fn create_success_response(converted_bytes: Vec<u8>, output_format: &str) -> Response<Body> {
     let filename = format!("converted.{}", output_format);
-    let content_type = mime_guess::from_ext(output_format.as_str())
+    let content_type = mime_guess::from_ext(output_format)
         .first_or_octet_stream()
         .to_string();
 

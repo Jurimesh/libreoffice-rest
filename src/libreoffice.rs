@@ -113,8 +113,8 @@ fn analyze_missing_output_error(output_dir: &PathBuf, from: &str, to: &str) -> L
 /// Async version using tokio::process::Command with timeout
 pub async fn convert_libreoffice_async(
     input_buf: Vec<u8>,
-    from: String,
-    to: String,
+    from: &str,
+    to: &str,
 ) -> Result<Vec<u8>> {
     tracing::debug!("Starting async CLI conversion: {} -> {}", from, to);
 
@@ -179,7 +179,7 @@ pub async fn convert_libreoffice_async(
             let path = entry.path();
 
             if let Some(ext) = path.extension() {
-                if ext == to.as_str() {
+                if ext == to {
                     found_file = Some(path);
                     break;
                 }
@@ -215,6 +215,6 @@ pub async fn convert_libreoffice_async(
 }
 
 // Convenience function - use the async version by default
-pub async fn convert_libreoffice(input_buf: Vec<u8>, from: String, to: String) -> Result<Vec<u8>> {
+pub async fn convert_libreoffice(input_buf: Vec<u8>, from: &str, to: &str) -> Result<Vec<u8>> {
     convert_libreoffice_async(input_buf, from, to).await
 }
