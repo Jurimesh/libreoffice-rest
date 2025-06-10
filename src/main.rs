@@ -6,6 +6,7 @@ use axum::{
 use tower_http::trace::TraceLayer;
 
 mod libreoffice;
+mod detect_filetype;
 mod routes;
 
 const PORT: u16 = 1234;

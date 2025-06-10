@@ -2,6 +2,8 @@ use std::path::PathBuf;
 use tempfile::{TempDir, tempdir};
 use tokio::process::Command as TokioCommand;
 
+use crate::detect_filetype::{FileType, detect_file_type_from_bytes};
+
 #[derive(Debug, thiserror::Error)]
 pub enum LibreOfficeError {
     #[error("IO error: {0}")]
@@ -216,5 +218,17 @@ pub async fn convert_libreoffice_async(
 
 // Convenience function - use the async version by default
 pub async fn convert_libreoffice(input_buf: Vec<u8>, from: &str, to: &str) -> Result<Vec<u8>> {
+    let detected_mimetype = detect_file_type_from_bytes(&input_buf);
+
+    match detected_mimetype {
+        FileType::Unknown => {
+            return Err(LibreOfficeError::UnsupportedConversion {
+                from: from.to_string(),
+                to: to.to_string(),
+            });
+        }
+        _ => {}
+    }
+
     convert_libreoffice_async(input_buf, from, to).await
 }
