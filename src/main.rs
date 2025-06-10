@@ -5,10 +5,10 @@ use axum::{
 };
 use tower_http::trace::TraceLayer;
 
-mod libreoffice;
 mod detect_filetype;
-mod routes;
 mod error;
+mod libreoffice;
+mod routes;
 
 const PORT: u16 = 1234;
 
@@ -19,10 +19,12 @@ async fn main() {
         .init();
 
     let app = Router::new()
-        .layer(DefaultBodyLimit::max(250 * 1024 * 1024))
         .route("/health", get(routes::health::handler))
         .route("/ready", get(routes::ready::handler))
-        .route("/convert", post(routes::convert::handler))
+        .route(
+            "/convert",
+            post(routes::convert::handler).layer(DefaultBodyLimit::max(250 * 1024 * 1024)),
+        )
         .layer(TraceLayer::new_for_http());
 
     let addr: String = format!("0.0.0.0:{}", PORT);
