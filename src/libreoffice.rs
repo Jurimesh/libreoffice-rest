@@ -2,27 +2,10 @@ use std::path::PathBuf;
 use tempfile::{TempDir, tempdir};
 use tokio::process::Command as TokioCommand;
 
-#[derive(Debug, thiserror::Error)]
-pub enum LibreOfficeError {
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-    #[error("Conversion timeout")]
-    Timeout,
-    #[error("Conversion failed: {0}")]
-    ConversionFailed(String),
-    #[error("Output file not found after conversion")]
-    OutputNotFound,
-    #[error("Corrupted or invalid input file: {0}")]
-    CorruptedInput(String),
-    #[error("Unsupported format conversion from {from} to {to}")]
-    UnsupportedConversion { from: String, to: String },
-    #[error("File is password protected")]
-    PasswordProtected,
-    #[error("Input file is empty or invalid")]
-    EmptyOrInvalidInput,
-}
-
-pub type Result<T> = std::result::Result<T, LibreOfficeError>;
+use crate::{
+    detect_filetype::{FileType, detect_file_type_from_bytes},
+    error::{LibreOfficeError, Result},
+};
 
 fn temp_dir_with_files(input_name: &str) -> std::io::Result<(PathBuf, PathBuf, TempDir)> {
     let temp_dir = tempdir()?;
@@ -216,5 +199,17 @@ pub async fn convert_libreoffice_async(
 
 // Convenience function - use the async version by default
 pub async fn convert_libreoffice(input_buf: Vec<u8>, from: &str, to: &str) -> Result<Vec<u8>> {
+    let detected_mimetype = detect_file_type_from_bytes(&input_buf);
+
+    match detected_mimetype {
+        FileType::Unknown => {
+            return Err(LibreOfficeError::UnsupportedConversion {
+                from: from.to_string(),
+                to: to.to_string(),
+            });
+        }
+        _ => {}
+    }
+
     convert_libreoffice_async(input_buf, from, to).await
 }
