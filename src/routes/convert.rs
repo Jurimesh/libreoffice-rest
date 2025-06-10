@@ -1,7 +1,7 @@
 use axum::{body::Body, extract::Multipart, http::StatusCode, response::Response};
 use hyper::header;
 
-use crate::{error::LibreOfficeError, libreoffice};
+use crate::{error::create_error_response, libreoffice};
 
 #[axum::debug_handler]
 pub async fn handler(mut multipart: Multipart) -> Response {
@@ -78,7 +78,7 @@ async fn handle_conversion(bytes: Vec<u8>, input: String, output: String) -> Res
         }
         Err(e) => {
             tracing::error!("Conversion failed: {}", e);
-            create_conversion_error_response(e)
+            e.into()
         }
     }
 }
@@ -104,46 +104,4 @@ fn create_success_response(converted_bytes: Vec<u8>, output_format: &str) -> Res
             create_error_response(StatusCode::INTERNAL_SERVER_ERROR, "Error building response")
         }
     }
-}
-
-fn create_conversion_error_response(e: LibreOfficeError) -> Response<Body> {
-    let (status, message) = match e {
-        LibreOfficeError::Timeout => (
-            StatusCode::REQUEST_TIMEOUT,
-            "Conversion timed out".to_string(),
-        ),
-        LibreOfficeError::CorruptedInput(_) => (
-            StatusCode::BAD_REQUEST,
-            format!("Invalid or corrupted input file: {}", e),
-        ),
-        LibreOfficeError::UnsupportedConversion { from, to } => (
-            StatusCode::BAD_REQUEST,
-            format!("Unsupported conversion from {} to {}", from, to),
-        ),
-        LibreOfficeError::PasswordProtected => (
-            StatusCode::BAD_REQUEST,
-            "File is password protected".to_string(),
-        ),
-        LibreOfficeError::EmptyOrInvalidInput => (
-            StatusCode::BAD_REQUEST,
-            "Input file is empty or invalid".to_string(),
-        ),
-        _ => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Conversion failed: {}", e),
-        ),
-    };
-
-    create_error_response(status, &message)
-}
-
-// Helper function to create error responses safely
-fn create_error_response(status: StatusCode, message: &str) -> Response<Body> {
-    Response::builder()
-        .status(status)
-        .body(Body::from(message.to_string()))
-        .unwrap_or_else(|e| {
-            tracing::error!("Failed to build error response: {}", e);
-            Response::new(Body::from("Internal server error"))
-        })
 }
