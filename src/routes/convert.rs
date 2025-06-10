@@ -1,7 +1,7 @@
 use axum::{body::Body, extract::Multipart, http::StatusCode, response::Response};
 use hyper::header;
 
-use crate::libreoffice;
+use crate::{error::LibreOfficeError, libreoffice};
 
 #[axum::debug_handler]
 pub async fn handler(mut multipart: Multipart) -> Response {
@@ -106,25 +106,25 @@ fn create_success_response(converted_bytes: Vec<u8>, output_format: &str) -> Res
     }
 }
 
-fn create_conversion_error_response(e: libreoffice::LibreOfficeError) -> Response<Body> {
+fn create_conversion_error_response(e: LibreOfficeError) -> Response<Body> {
     let (status, message) = match e {
-        libreoffice::LibreOfficeError::Timeout => (
+        LibreOfficeError::Timeout => (
             StatusCode::REQUEST_TIMEOUT,
             "Conversion timed out".to_string(),
         ),
-        libreoffice::LibreOfficeError::CorruptedInput(_) => (
+        LibreOfficeError::CorruptedInput(_) => (
             StatusCode::BAD_REQUEST,
             format!("Invalid or corrupted input file: {}", e),
         ),
-        libreoffice::LibreOfficeError::UnsupportedConversion { from, to } => (
+        LibreOfficeError::UnsupportedConversion { from, to } => (
             StatusCode::BAD_REQUEST,
             format!("Unsupported conversion from {} to {}", from, to),
         ),
-        libreoffice::LibreOfficeError::PasswordProtected => (
+        LibreOfficeError::PasswordProtected => (
             StatusCode::BAD_REQUEST,
             "File is password protected".to_string(),
         ),
-        libreoffice::LibreOfficeError::EmptyOrInvalidInput => (
+        LibreOfficeError::EmptyOrInvalidInput => (
             StatusCode::BAD_REQUEST,
             "Input file is empty or invalid".to_string(),
         ),
