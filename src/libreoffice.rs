@@ -201,14 +201,11 @@ pub async fn convert_libreoffice_async(
 pub async fn convert_libreoffice(input_buf: Vec<u8>, from: &str, to: &str) -> Result<Vec<u8>> {
     let detected_mimetype = detect_file_type_from_bytes(&input_buf);
 
-    match detected_mimetype {
-        FileType::Unknown => {
-            return Err(LibreOfficeError::UnsupportedConversion {
-                from: from.to_string(),
-                to: to.to_string(),
-            });
-        }
-        _ => {}
+    if detected_mimetype == FileType::Unknown {
+        return Err(LibreOfficeError::UnsupportedConversion {
+            from: from.to_string(),
+            to: to.to_string(),
+        });
     }
 
     convert_libreoffice_async(input_buf, from, to).await
