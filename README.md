@@ -11,8 +11,12 @@ docker build -t libreoffice-rest:latest .
 ## Run
 
 ```
-docker run -p 1234:1234 -e TARGET_DIR=/tmp libreoffice-rest:latest
+docker run -p 1234:1234 -e TMPDIR=/tmp libreoffice-rest:latest
 ```
+
+### Temp directory
+
+On unix rust temp_dir is using TMPDIR environment variable and has some fallbacks if not set.
 
 ## API Usage
 
