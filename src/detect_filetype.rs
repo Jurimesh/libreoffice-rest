@@ -11,38 +11,23 @@ pub enum FileType {
 }
 
 pub fn detect_openoffice_file_type(content: &[u8]) -> FileType {
-    if content.len() == 0 {
+    if content.is_empty() {
         return FileType::Unknown;
     }
 
-    // PDF signature
-    if content.starts_with(b"%PDF-") {
-        return FileType::Pdf;
-    }
-
-    // RTF signature
-    if content.starts_with(b"{\\rtf1") {
-        return FileType::RichText;
-    }
-
     let content_slice = content.get(..1024).unwrap_or(content);
-
-    // ZIP-based formats (docx, pptx, xlsx, odt, ods, odp)
-    if content.starts_with(b"PK\x03\x04") || content.starts_with(b"PK\x05\x06") {
-        return detect_zip_based_format(content_slice);
+    match content_slice {
+        b if b.starts_with(b"%PDF-") => FileType::Pdf,
+        b if b.starts_with(b"{\\rtf1") => FileType::RichText,
+        b if b.starts_with(b"PK\x03\x04") || b.starts_with(b"PK\x05\x06") => {
+            detect_zip_based_format(content_slice)
+        }
+        b if b.starts_with(b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1") => {
+            detect_ole2_format(content_slice)
+        }
+        _b if is_likely_text(content_slice) => FileType::PlainText,
+        _ => FileType::Unknown,
     }
-
-    // OLE2/Compound Document formats (doc, ppt, xls)
-    if content.starts_with(b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1") {
-        return detect_ole2_format(content_slice);
-    }
-
-    // Plain text detection (basic heuristic)
-    if is_likely_text(content_slice) {
-        return FileType::PlainText;
-    }
-
-    FileType::Unknown
 }
 
 fn detect_zip_based_format(content: &[u8]) -> FileType {
