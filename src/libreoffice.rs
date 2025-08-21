@@ -1,11 +1,20 @@
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use tempfile::{TempDir, tempdir};
 use tokio::process::Command as TokioCommand;
+use tokio::sync::Mutex;
 
 use crate::{
     detect_filetype::{FileType, detect_file_type_from_bytes},
     error::{LibreOfficeError, Result},
 };
+
+// Global mutex to ensure only one LibreOffice conversion runs at a time
+static LIBREOFFICE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn get_libreoffice_lock() -> &'static Mutex<()> {
+    LIBREOFFICE_LOCK.get_or_init(|| Mutex::new(()))
+}
 
 fn temp_dir_with_files(input_name: &str) -> std::io::Result<(PathBuf, PathBuf, TempDir)> {
     let temp_dir = tempdir()?;
@@ -100,6 +109,11 @@ pub async fn convert_libreoffice_async(
     to: &str,
 ) -> Result<Vec<u8>> {
     tracing::debug!("Starting async CLI conversion: {} -> {}", from, to);
+
+    // Acquire the lock to ensure only one LibreOffice process runs at a time
+    tracing::debug!("Waiting for LibreOffice lock...");
+    let _lock = get_libreoffice_lock().lock().await;
+    tracing::debug!("LibreOffice lock acquired, proceeding with conversion");
 
     let input_filename = format!("document.{}", from);
     let (input_path, output_dir, _temp_dir) =
@@ -209,4 +223,65 @@ pub async fn convert_libreoffice(input_buf: Vec<u8>, from: &str, to: &str) -> Re
     }
 
     convert_libreoffice_async(input_buf, from, to).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::time::{sleep, Duration};
+
+    #[tokio::test]
+    async fn test_libreoffice_lock_initialization() {
+        // Test that the lock can be initialized and acquired
+        let lock = get_libreoffice_lock();
+        let _guard = lock.lock().await;
+        // If we get here, the lock works
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_lock_access() {
+        // Test that only one task can hold the lock at a time
+        let counter = Arc::new(AtomicUsize::new(0));
+        let mut handles = vec![];
+
+        for _ in 0..5 {
+            let counter_clone = counter.clone();
+            let handle = tokio::spawn(async move {
+                let _lock = get_libreoffice_lock().lock().await;
+                
+                // Increment counter and sleep to simulate work
+                let current = counter_clone.fetch_add(1, Ordering::SeqCst);
+                sleep(Duration::from_millis(10)).await;
+                let after_sleep = counter_clone.load(Ordering::SeqCst);
+                
+                // If locking works correctly, no other task should have incremented
+                // the counter while we were sleeping
+                assert_eq!(current + 1, after_sleep);
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all tasks to complete
+        for handle in handles {
+            handle.await.expect("Task should complete successfully");
+        }
+
+        // All tasks should have completed
+        assert_eq!(counter.load(Ordering::SeqCst), 5);
+    }
+
+    #[tokio::test]
+    async fn test_lock_released_on_drop() {
+        // Test that the lock is properly released when the guard is dropped
+        {
+            let _guard = get_libreoffice_lock().lock().await;
+            // Lock is held here
+        }
+        // Lock should be released here
+        
+        // We should be able to acquire it again immediately
+        let _guard2 = get_libreoffice_lock().lock().await;
+    }
 }
