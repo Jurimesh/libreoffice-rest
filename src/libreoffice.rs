@@ -73,7 +73,7 @@ fn analyze_libreoffice_error(stderr: &str, stdout: &str, from: &str, to: &str) -
 }
 
 /// Analyzes why the output file is missing to provide more specific error messages
-fn analyze_missing_output_error(output_dir: &PathBuf, from: &str, to: &str) -> LibreOfficeError {
+fn analyze_missing_output_error(output_dir: &PathBuf) -> LibreOfficeError {
     // Check what files actually exist in the output directory
     if let Ok(entries) = std::fs::read_dir(output_dir) {
         let files: Vec<String> = entries
@@ -83,19 +83,10 @@ fn analyze_missing_output_error(output_dir: &PathBuf, from: &str, to: &str) -> L
 
         tracing::debug!("Files found in output directory: {:?}", files);
 
-        if files.is_empty() {
-            // If no files at all were created, likely input file issue
-            return LibreOfficeError::CorruptedInput(
-                "No output files were generated - input file may be corrupted or invalid"
-                    .to_string(),
-            );
-        } else {
-            // If files exist but not the expected format, conversion issue
-            return LibreOfficeError::UnsupportedConversion {
-                from: from.to_string(),
-                to: to.to_string(),
-            };
-        }
+        // If no files at all were created, likely input file issue
+        return LibreOfficeError::CorruptedInput(
+            "No output files were generated - input file may be corrupted or invalid".to_string(),
+        );
     }
 
     // Fallback to generic error
@@ -196,7 +187,7 @@ pub async fn convert_libreoffice_async(
             }
             None => {
                 // No output file found - this could indicate various issues
-                return Err(analyze_missing_output_error(&output_dir, &from, &to));
+                return Err(analyze_missing_output_error(&output_dir));
             }
         }
     }
