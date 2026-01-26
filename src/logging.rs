@@ -78,14 +78,19 @@ where
         )?;
 
         // Add target
-        write!(json, ",\"target\":\"{}\"", metadata.target())?;
+        write!(
+            json,
+            ",\"target\":\"{}\"",
+            escape_json_string(metadata.target())
+        )?;
 
         // Add source location for GCP
         if let (Some(file), Some(line)) = (metadata.file(), metadata.line()) {
             write!(
                 json,
                 ",\"logging.googleapis.com/sourceLocation\":{{\"file\":\"{}\",\"line\":{}}}",
-                file, line
+                escape_json_string(file),
+                line
             )?;
         }
 
@@ -94,7 +99,11 @@ where
             let spans: Vec<&str> = scope.map(|s| s.name()).collect();
             if !spans.is_empty() {
                 let span_path: Vec<&str> = spans.iter().rev().copied().collect();
-                write!(json, ",\"span\":\"{}\"", span_path.join(" > "))?;
+                write!(
+                    json,
+                    ",\"span\":\"{}\"",
+                    escape_json_string(&span_path.join(" > "))
+                )?;
             }
         }
 
@@ -104,7 +113,7 @@ where
 
         if !visitor.fields.is_empty() {
             for (key, value) in &visitor.fields {
-                write!(json, ",\"{}\":{}", key, value)?;
+                write!(json, ",\"{}\":{}", escape_json_string(key), value)?;
             }
         }
 
@@ -150,8 +159,18 @@ impl tracing::field::Visit for JsonFieldVisitor {
     }
 
     fn record_f64(&mut self, field: &tracing::field::Field, value: f64) {
-        self.fields
-            .push((field.name().to_string(), value.to_string()));
+        let json_value = if value.is_nan() {
+            "null".to_string()
+        } else if value.is_infinite() {
+            if value.is_sign_positive() {
+                "\"Infinity\"".to_string()
+            } else {
+                "\"-Infinity\"".to_string()
+            }
+        } else {
+            value.to_string()
+        };
+        self.fields.push((field.name().to_string(), json_value));
     }
 
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
@@ -183,6 +202,8 @@ fn escape_json_string(s: &str) -> String {
             '\n' => result.push_str("\\n"),
             '\r' => result.push_str("\\r"),
             '\t' => result.push_str("\\t"),
+            '\u{0008}' => result.push_str("\\b"),
+            '\u{000C}' => result.push_str("\\f"),
             c if c.is_control() => {
                 result.push_str(&format!("\\u{:04x}", c as u32));
             }
@@ -203,9 +224,10 @@ pub fn setup_tracing(format: LogFormat) {
 
     match format {
         LogFormat::Pretty => {
-            let use_ansi = env::var("DISABLE_ANSI_LOGGING")
-                .map(|v| v.is_empty())
-                .unwrap_or_else(|_| io::IsTerminal::is_terminal(&io::stdout()));
+            let use_ansi = match env::var("DISABLE_ANSI_LOGGING") {
+                Ok(v) if !v.is_empty() => false,
+                _ => io::IsTerminal::is_terminal(&io::stdout()),
+            };
 
             Registry::default()
                 .with(filter)
