@@ -46,7 +46,9 @@ fn analyze_libreoffice_error(stderr: &str, stdout: &str, from: &str, to: &str) -
         || combined_output.contains("parse error")
         || combined_output.contains("bad file")
     {
-        return LibreOfficeError::CorruptedInput("File appears to be corrupted or in an invalid format".to_string());
+        return LibreOfficeError::CorruptedInput(
+            "File appears to be corrupted or in an invalid format".to_string(),
+        );
     }
 
     if combined_output.contains("empty")
@@ -167,10 +169,11 @@ pub async fn convert_libreoffice_async(
             let path = entry.path();
 
             if let Some(ext) = path.extension()
-                && ext == to {
-                    found_file = Some(path);
-                    break;
-                }
+                && ext == to
+            {
+                found_file = Some(path);
+                break;
+            }
         }
 
         match found_file {
