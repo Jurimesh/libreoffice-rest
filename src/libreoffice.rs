@@ -46,9 +46,7 @@ fn analyze_libreoffice_error(stderr: &str, stdout: &str, from: &str, to: &str) -
         || combined_output.contains("parse error")
         || combined_output.contains("bad file")
     {
-        return LibreOfficeError::CorruptedInput(format!(
-            "File appears to be corrupted or in an invalid format"
-        ));
+        return LibreOfficeError::CorruptedInput("File appears to be corrupted or in an invalid format".to_string());
     }
 
     if combined_output.contains("empty")
@@ -121,10 +119,10 @@ pub async fn convert_libreoffice_async(
     let output = tokio::time::timeout(
         std::time::Duration::from_secs(60), // 60 second timeout
         TokioCommand::new("libreoffice")
-            .args(&[
+            .args([
                 "--headless",
                 "--convert-to",
-                &to,
+                to,
                 "--outdir",
                 output_dir.to_str().unwrap(),
                 input_path.to_str().unwrap(),
@@ -147,7 +145,7 @@ pub async fn convert_libreoffice_async(
     // Check if conversion succeeded and analyze the error
     if !output.status.success() {
         // Analyze the error output for specific issues
-        let error = analyze_libreoffice_error(&stderr, &stdout, &from, &to);
+        let error = analyze_libreoffice_error(&stderr, &stdout, from, to);
         return Err(error);
     }
 
@@ -168,12 +166,11 @@ pub async fn convert_libreoffice_async(
         while let Some(entry) = entries.next_entry().await.map_err(LibreOfficeError::Io)? {
             let path = entry.path();
 
-            if let Some(ext) = path.extension() {
-                if ext == to {
+            if let Some(ext) = path.extension()
+                && ext == to {
                     found_file = Some(path);
                     break;
                 }
-            }
         }
 
         match found_file {
