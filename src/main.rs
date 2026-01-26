@@ -10,15 +10,14 @@ use tower_http::trace::TraceLayer;
 mod detect_filetype;
 mod error;
 mod libreoffice;
+mod logging;
 mod routes;
 
 const DEFAULT_PORT: u16 = 1234;
 
 #[tokio::main]
 async fn main() {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .init();
+    logging::setup_tracing_from_env();
 
     let port = env::var("PORT")
         .ok()
