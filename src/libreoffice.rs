@@ -118,6 +118,14 @@ pub async fn convert_libreoffice_async(
     from: &str,
     to: &str,
 ) -> Result<Vec<u8>> {
+    // Validate output format: must be alphanumeric and reasonably short
+    if to.is_empty() || to.len() > 20 || !to.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return Err(LibreOfficeError::UnsupportedConversion {
+            from: from.to_string(),
+            to: to.to_string(),
+        });
+    }
+
     tracing::debug!("Starting async CLI conversion: {} -> {}", from, to);
 
     // Acquire the lock with a queue timeout so requests don't wait forever
@@ -157,31 +165,45 @@ pub async fn convert_libreoffice_async(
         .spawn()
         .map_err(LibreOfficeError::Io)?;
 
-    // Take stdout/stderr pipes before waiting, so we retain the child handle for kill()
+    // Take stdout/stderr pipes before waiting so we can read them concurrently
+    // with child.wait(). Reading after wait() would deadlock if LibreOffice
+    // writes more than the OS pipe buffer (~64KB).
     let stdout_pipe = child.stdout.take();
     let stderr_pipe = child.stderr.take();
 
-    let output = match tokio::time::timeout(conversion_timeout(), child.wait()).await {
-        Ok(Ok(status)) => {
-            let mut stdout_bytes = Vec::new();
-            let mut stderr_bytes = Vec::new();
-            if let Some(mut pipe) = stdout_pipe {
-                tokio::io::AsyncReadExt::read_to_end(&mut pipe, &mut stdout_bytes)
-                    .await
-                    .ok();
-            }
-            if let Some(mut pipe) = stderr_pipe {
-                tokio::io::AsyncReadExt::read_to_end(&mut pipe, &mut stderr_bytes)
-                    .await
-                    .ok();
-            }
-            std::process::Output {
-                status,
-                stdout: stdout_bytes,
-                stderr: stderr_bytes,
+    let stdout_fut = async {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = stdout_pipe {
+            if let Err(e) = tokio::io::AsyncReadExt::read_to_end(&mut pipe, &mut buf).await {
+                tracing::warn!("Failed to read LibreOffice stdout: {}", e);
             }
         }
-        Ok(Err(e)) => return Err(LibreOfficeError::Io(e)),
+        buf
+    };
+
+    let stderr_fut = async {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = stderr_pipe {
+            if let Err(e) = tokio::io::AsyncReadExt::read_to_end(&mut pipe, &mut buf).await {
+                tracing::warn!("Failed to read LibreOffice stderr: {}", e);
+            }
+        }
+        buf
+    };
+
+    let output = match tokio::time::timeout(conversion_timeout(), async {
+        let (stdout_bytes, stderr_bytes, wait_result) =
+            tokio::join!(stdout_fut, stderr_fut, child.wait());
+        (stdout_bytes, stderr_bytes, wait_result)
+    })
+    .await
+    {
+        Ok((stdout_bytes, stderr_bytes, Ok(status))) => std::process::Output {
+            status,
+            stdout: stdout_bytes,
+            stderr: stderr_bytes,
+        },
+        Ok((_, _, Err(e))) => return Err(LibreOfficeError::Io(e)),
         Err(_) => {
             // Kill the process on timeout to prevent zombie processes
             tracing::warn!("LibreOffice conversion timed out, killing process");
