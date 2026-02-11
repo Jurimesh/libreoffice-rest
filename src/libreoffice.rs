@@ -9,6 +9,25 @@ use crate::{
     error::{LibreOfficeError, Result},
 };
 
+const DEFAULT_CONVERSION_TIMEOUT_SECS: u64 = 120;
+const DEFAULT_QUEUE_TIMEOUT_SECS: u64 = 300;
+
+fn conversion_timeout() -> std::time::Duration {
+    let secs = std::env::var("CONVERSION_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_CONVERSION_TIMEOUT_SECS);
+    std::time::Duration::from_secs(secs)
+}
+
+fn queue_timeout() -> std::time::Duration {
+    let secs = std::env::var("QUEUE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_QUEUE_TIMEOUT_SECS);
+    std::time::Duration::from_secs(secs)
+}
+
 // Global mutex to ensure only one LibreOffice conversion runs at a time
 static LIBREOFFICE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -101,9 +120,15 @@ pub async fn convert_libreoffice_async(
 ) -> Result<Vec<u8>> {
     tracing::debug!("Starting async CLI conversion: {} -> {}", from, to);
 
-    // Acquire the lock to ensure only one LibreOffice process runs at a time
+    // Acquire the lock with a queue timeout so requests don't wait forever
     tracing::debug!("Waiting for LibreOffice lock...");
-    let _lock = get_libreoffice_lock().lock().await;
+    let _lock = match tokio::time::timeout(queue_timeout(), get_libreoffice_lock().lock()).await {
+        Ok(guard) => guard,
+        Err(_) => {
+            tracing::warn!("Timed out waiting for LibreOffice lock (queue full)");
+            return Err(LibreOfficeError::QueueTimeout);
+        }
+    };
     tracing::debug!("LibreOffice lock acquired, proceeding with conversion");
 
     let input_filename = format!("document.{}", from);
@@ -116,27 +141,55 @@ pub async fn convert_libreoffice_async(
         .map_err(LibreOfficeError::Io)?;
     tracing::debug!("Input file written: {:?}", input_path);
 
-    // Run LibreOffice conversion with timeout
+    // Spawn LibreOffice process (not .output()) so we can kill it on timeout
     tracing::debug!("Running LibreOffice conversion...");
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(60), // 60 second timeout
-        TokioCommand::new("libreoffice")
-            .args([
-                "--headless",
-                "--convert-to",
-                to,
-                "--outdir",
-                output_dir.to_str().unwrap(),
-                input_path.to_str().unwrap(),
-            ])
-            .output(),
-    )
-    .await;
+    let mut child = TokioCommand::new("libreoffice")
+        .args([
+            "--headless",
+            "--convert-to",
+            to,
+            "--outdir",
+            output_dir.to_str().unwrap(),
+            input_path.to_str().unwrap(),
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(LibreOfficeError::Io)?;
 
-    let output = match output {
-        Ok(Ok(output)) => output,
+    // Take stdout/stderr pipes before waiting, so we retain the child handle for kill()
+    let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
+
+    let output = match tokio::time::timeout(conversion_timeout(), child.wait()).await {
+        Ok(Ok(status)) => {
+            let mut stdout_bytes = Vec::new();
+            let mut stderr_bytes = Vec::new();
+            if let Some(mut pipe) = stdout_pipe {
+                tokio::io::AsyncReadExt::read_to_end(&mut pipe, &mut stdout_bytes)
+                    .await
+                    .ok();
+            }
+            if let Some(mut pipe) = stderr_pipe {
+                tokio::io::AsyncReadExt::read_to_end(&mut pipe, &mut stderr_bytes)
+                    .await
+                    .ok();
+            }
+            std::process::Output {
+                status,
+                stdout: stdout_bytes,
+                stderr: stderr_bytes,
+            }
+        }
         Ok(Err(e)) => return Err(LibreOfficeError::Io(e)),
-        Err(_) => return Err(LibreOfficeError::Timeout),
+        Err(_) => {
+            // Kill the process on timeout to prevent zombie processes
+            tracing::warn!("LibreOffice conversion timed out, killing process");
+            if let Err(e) = child.kill().await {
+                tracing::error!("Failed to kill timed-out LibreOffice process: {}", e);
+            }
+            return Err(LibreOfficeError::Timeout);
+        }
     };
 
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -156,7 +209,7 @@ pub async fn convert_libreoffice_async(
     // Find and read the output file
     let expected_output = output_dir.join(format!("document.{}", to));
 
-    println!("Looking for output file at {:?}", expected_output);
+    tracing::debug!("Looking for output file at {:?}", expected_output);
 
     if !expected_output.exists() {
         // Try to find any file with the target extension
