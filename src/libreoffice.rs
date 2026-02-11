@@ -173,21 +173,19 @@ pub async fn convert_libreoffice_async(
 
     let stdout_fut = async {
         let mut buf = Vec::new();
-        if let Some(mut pipe) = stdout_pipe {
-            if let Err(e) = tokio::io::AsyncReadExt::read_to_end(&mut pipe, &mut buf).await {
+        if let Some(mut pipe) = stdout_pipe
+            && let Err(e) = tokio::io::AsyncReadExt::read_to_end(&mut pipe, &mut buf).await {
                 tracing::warn!("Failed to read LibreOffice stdout: {}", e);
             }
-        }
         buf
     };
 
     let stderr_fut = async {
         let mut buf = Vec::new();
-        if let Some(mut pipe) = stderr_pipe {
-            if let Err(e) = tokio::io::AsyncReadExt::read_to_end(&mut pipe, &mut buf).await {
+        if let Some(mut pipe) = stderr_pipe
+            && let Err(e) = tokio::io::AsyncReadExt::read_to_end(&mut pipe, &mut buf).await {
                 tracing::warn!("Failed to read LibreOffice stderr: {}", e);
             }
-        }
         buf
     };
 
