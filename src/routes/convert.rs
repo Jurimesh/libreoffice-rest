@@ -4,7 +4,7 @@ use tracing::Instrument;
 
 use crate::{error::create_error_response, libreoffice};
 
-const MAX_OUTPUT_FORMAT_LEN: usize = 50;
+const MAX_OUTPUT_FORMAT_LEN: usize = 20;
 
 #[axum::debug_handler]
 pub async fn handler(mut multipart: Multipart) -> Response {
