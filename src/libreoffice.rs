@@ -9,7 +9,7 @@ use crate::{
     error::{LibreOfficeError, Result},
 };
 
-const DEFAULT_CONVERSION_TIMEOUT_SECS: u64 = 120;
+const DEFAULT_CONVERSION_TIMEOUT_SECS: u64 = 900; // 15 minutes, as some conversions can be very slow
 const DEFAULT_QUEUE_TIMEOUT_SECS: u64 = 300;
 
 fn conversion_timeout() -> std::time::Duration {
