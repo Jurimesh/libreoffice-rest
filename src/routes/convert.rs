@@ -85,10 +85,34 @@ async fn extract_multipart_data(
                     )
                 })?;
 
-                if !text.chars().all(|c| c.is_ascii_alphanumeric()) {
+                if text.is_empty() {
                     return Err(create_error_response(
                         StatusCode::BAD_REQUEST,
-                        "output_format must contain only alphanumeric characters",
+                        "output_format must not be empty",
+                    ));
+                }
+
+                // Allow LibreOffice filter specs like "pdf:writer_pdf_Export".
+                // Only ASCII alphanumerics, ':', and '_' are permitted.
+                if !text
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == ':' || c == '_')
+                {
+                    return Err(create_error_response(
+                        StatusCode::BAD_REQUEST,
+                        "output_format may only contain ASCII letters, digits, ':', and '_'",
+                    ));
+                }
+
+                // The extension portion (before the first ':') must be
+                // non-empty and strictly alphanumeric.
+                let extension = text.split(':').next().unwrap_or("");
+                if extension.is_empty()
+                    || !extension.chars().all(|c| c.is_ascii_alphanumeric())
+                {
+                    return Err(create_error_response(
+                        StatusCode::BAD_REQUEST,
+                        "output_format extension (before ':') must be non-empty and alphanumeric",
                     ));
                 }
 
@@ -145,10 +169,11 @@ async fn handle_conversion(
 }
 
 fn create_success_response(converted_bytes: Vec<u8>, output_format: &str) -> Response<Body> {
-    // output_format is validated as alphanumeric, so the filename is safe for
-    // Content-Disposition without additional encoding
-    let filename = format!("converted.{}", output_format);
-    let content_type = mime_guess::from_ext(output_format)
+    // Extract the extension portion (before any ':' filter spec) for the
+    // filename and content-type. The extension is validated as alphanumeric.
+    let ext = output_format.split(':').next().unwrap_or(output_format);
+    let filename = format!("converted.{}", ext);
+    let content_type = mime_guess::from_ext(ext)
         .first_or_octet_stream()
         .to_string();
 
