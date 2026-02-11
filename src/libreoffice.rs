@@ -9,6 +9,25 @@ use crate::{
     error::{LibreOfficeError, Result},
 };
 
+const DEFAULT_CONVERSION_TIMEOUT_SECS: u64 = 900; // 15 minutes, as some conversions can be very slow
+const DEFAULT_QUEUE_TIMEOUT_SECS: u64 = 300;
+
+fn conversion_timeout() -> std::time::Duration {
+    let secs = std::env::var("CONVERSION_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_CONVERSION_TIMEOUT_SECS);
+    std::time::Duration::from_secs(secs)
+}
+
+fn queue_timeout() -> std::time::Duration {
+    let secs = std::env::var("QUEUE_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(DEFAULT_QUEUE_TIMEOUT_SECS);
+    std::time::Duration::from_secs(secs)
+}
+
 // Global mutex to ensure only one LibreOffice conversion runs at a time
 static LIBREOFFICE_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -99,11 +118,33 @@ pub async fn convert_libreoffice_async(
     from: &str,
     to: &str,
 ) -> Result<Vec<u8>> {
+    // Validate output format: allow filter specs like "pdf:writer_pdf_Export"
+    let ext = to.split(':').next().unwrap_or("");
+    if to.is_empty()
+        || to.len() > 50
+        || ext.is_empty()
+        || !ext.chars().all(|c| c.is_ascii_alphanumeric())
+        || !to
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == ':' || c == '_')
+    {
+        return Err(LibreOfficeError::UnsupportedConversion {
+            from: from.to_string(),
+            to: to.to_string(),
+        });
+    }
+
     tracing::debug!("Starting async CLI conversion: {} -> {}", from, to);
 
-    // Acquire the lock to ensure only one LibreOffice process runs at a time
+    // Acquire the lock with a queue timeout so requests don't wait forever
     tracing::debug!("Waiting for LibreOffice lock...");
-    let _lock = get_libreoffice_lock().lock().await;
+    let _lock = match tokio::time::timeout(queue_timeout(), get_libreoffice_lock().lock()).await {
+        Ok(guard) => guard,
+        Err(_) => {
+            tracing::warn!("Timed out waiting for LibreOffice lock (queue full)");
+            return Err(LibreOfficeError::QueueTimeout);
+        }
+    };
     tracing::debug!("LibreOffice lock acquired, proceeding with conversion");
 
     let input_filename = format!("document.{}", from);
@@ -116,27 +157,69 @@ pub async fn convert_libreoffice_async(
         .map_err(LibreOfficeError::Io)?;
     tracing::debug!("Input file written: {:?}", input_path);
 
-    // Run LibreOffice conversion with timeout
+    // Spawn LibreOffice process (not .output()) so we can kill it on timeout
     tracing::debug!("Running LibreOffice conversion...");
-    let output = tokio::time::timeout(
-        std::time::Duration::from_secs(60), // 60 second timeout
-        TokioCommand::new("libreoffice")
-            .args([
-                "--headless",
-                "--convert-to",
-                to,
-                "--outdir",
-                output_dir.to_str().unwrap(),
-                input_path.to_str().unwrap(),
-            ])
-            .output(),
-    )
-    .await;
+    let mut child = TokioCommand::new("libreoffice")
+        .args([
+            "--headless",
+            "--convert-to",
+            to,
+            "--outdir",
+            output_dir.to_str().unwrap(),
+            input_path.to_str().unwrap(),
+        ])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(LibreOfficeError::Io)?;
 
-    let output = match output {
-        Ok(Ok(output)) => output,
-        Ok(Err(e)) => return Err(LibreOfficeError::Io(e)),
-        Err(_) => return Err(LibreOfficeError::Timeout),
+    // Take stdout/stderr pipes before waiting so we can read them concurrently
+    // with child.wait(). Reading after wait() would deadlock if LibreOffice
+    // writes more than the OS pipe buffer (~64KB).
+    let stdout_pipe = child.stdout.take();
+    let stderr_pipe = child.stderr.take();
+
+    let stdout_fut = async {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = stdout_pipe
+            && let Err(e) = tokio::io::AsyncReadExt::read_to_end(&mut pipe, &mut buf).await {
+                tracing::warn!("Failed to read LibreOffice stdout: {}", e);
+            }
+        buf
+    };
+
+    let stderr_fut = async {
+        let mut buf = Vec::new();
+        if let Some(mut pipe) = stderr_pipe
+            && let Err(e) = tokio::io::AsyncReadExt::read_to_end(&mut pipe, &mut buf).await {
+                tracing::warn!("Failed to read LibreOffice stderr: {}", e);
+            }
+        buf
+    };
+
+    let output = match tokio::time::timeout(conversion_timeout(), async {
+        let (stdout_bytes, stderr_bytes, wait_result) =
+            tokio::join!(stdout_fut, stderr_fut, child.wait());
+        (stdout_bytes, stderr_bytes, wait_result)
+    })
+    .await
+    {
+        Ok((stdout_bytes, stderr_bytes, Ok(status))) => std::process::Output {
+            status,
+            stdout: stdout_bytes,
+            stderr: stderr_bytes,
+        },
+        Ok((_, _, Err(e))) => return Err(LibreOfficeError::Io(e)),
+        Err(_) => {
+            // Kill the process on timeout to prevent zombie processes
+            tracing::warn!("LibreOffice conversion timed out, killing process");
+            if let Err(e) = child.kill().await {
+                tracing::error!("Failed to kill timed-out LibreOffice process: {}", e);
+            }
+            // Reap the child to avoid leaving a zombie
+            let _ = child.wait().await;
+            return Err(LibreOfficeError::Timeout);
+        }
     };
 
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -153,10 +236,10 @@ pub async fn convert_libreoffice_async(
 
     tracing::debug!("LibreOffice conversion completed successfully");
 
-    // Find and read the output file
-    let expected_output = output_dir.join(format!("document.{}", to));
+    // Find and read the output file (use extension part only, not the filter spec)
+    let expected_output = output_dir.join(format!("document.{}", ext));
 
-    println!("Looking for output file at {:?}", expected_output);
+    tracing::debug!("Looking for output file at {:?}", expected_output);
 
     if !expected_output.exists() {
         // Try to find any file with the target extension
@@ -168,8 +251,8 @@ pub async fn convert_libreoffice_async(
         while let Some(entry) = entries.next_entry().await.map_err(LibreOfficeError::Io)? {
             let path = entry.path();
 
-            if let Some(ext) = path.extension()
-                && ext == to
+            if let Some(path_ext) = path.extension()
+                && path_ext == ext
             {
                 found_file = Some(path);
                 break;
@@ -337,6 +420,81 @@ mod tests {
         for i in 0..sorted_ends.len() - 1 {
             assert!(sorted_ends[i].1 <= sorted_starts[i + 1].1);
         }
+    }
+
+    #[tokio::test]
+    async fn test_rejects_empty_output_format() {
+        let input = b"dummy".to_vec();
+        let result = convert_libreoffice_async(input, "txt", "").await;
+        assert!(matches!(
+            result,
+            Err(LibreOfficeError::UnsupportedConversion { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_rejects_too_long_output_format() {
+        let input = b"dummy".to_vec();
+        // 51 chars exceeds the 50 char limit
+        let long_format = "a".repeat(51);
+        let result = convert_libreoffice_async(input, "txt", &long_format).await;
+        assert!(matches!(
+            result,
+            Err(LibreOfficeError::UnsupportedConversion { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_rejects_invalid_chars_in_output_format() {
+        let input = b"dummy".to_vec();
+        let result = convert_libreoffice_async(input, "txt", "pdf; rm -rf /").await;
+        assert!(matches!(
+            result,
+            Err(LibreOfficeError::UnsupportedConversion { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_allows_filter_spec_output_format() {
+        // This should pass validation but fail at the LibreOffice invocation
+        // (since LO likely isn't installed in test). The point is it doesn't
+        // fail at the format validation step.
+        let input = b"dummy".to_vec();
+        let result = convert_libreoffice_async(input, "txt", "pdf:writer_pdf_Export").await;
+        // Should NOT be UnsupportedConversion — it should fail later (Io error)
+        assert!(!matches!(
+            result,
+            Err(LibreOfficeError::UnsupportedConversion { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_rejects_filter_spec_with_empty_extension() {
+        let input = b"dummy".to_vec();
+        let result = convert_libreoffice_async(input, "txt", ":writer_pdf_Export").await;
+        assert!(matches!(
+            result,
+            Err(LibreOfficeError::UnsupportedConversion { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_queue_timeout() {
+        // Hold the lock so the conversion times out waiting for it
+        let _lock = get_libreoffice_lock().lock().await;
+
+        // Set a very short queue timeout
+        // SAFETY: test runs single-threaded (--test-threads=1)
+        unsafe { std::env::set_var("QUEUE_TIMEOUT_SECS", "0") };
+
+        let input = b"dummy".to_vec();
+        let result = convert_libreoffice_async(input, "txt", "pdf").await;
+
+        // Clean up env var
+        // SAFETY: test runs single-threaded (--test-threads=1)
+        unsafe { std::env::remove_var("QUEUE_TIMEOUT_SECS") };
+
+        assert!(matches!(result, Err(LibreOfficeError::QueueTimeout)));
     }
 
     #[tokio::test]

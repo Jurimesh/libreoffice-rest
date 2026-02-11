@@ -9,6 +9,8 @@ pub enum LibreOfficeError {
     Io(#[from] std::io::Error),
     #[error("Conversion timeout")]
     Timeout,
+    #[error("Queue timeout")]
+    QueueTimeout,
     #[error("Conversion failed: {0}")]
     ConversionFailed(String),
     #[error("Output file not found after conversion")]
@@ -29,6 +31,10 @@ impl From<LibreOfficeError> for Response<Body> {
             LibreOfficeError::Timeout => (
                 StatusCode::REQUEST_TIMEOUT,
                 "Conversion timed out".to_string(),
+            ),
+            LibreOfficeError::QueueTimeout => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Server busy, conversion queue timed out".to_string(),
             ),
             LibreOfficeError::CorruptedInput(_) => (
                 StatusCode::BAD_REQUEST,
